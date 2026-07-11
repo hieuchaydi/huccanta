@@ -1,0 +1,49 @@
+{
+  "name": "huccanta-code-flow-visualizer",
+  "private": true,
+  "version": "0.3.0",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "huccanta-mcp": "bin/huccanta-mcp.mjs"
+  },
+  "scripts": {
+    "dev": "concurrently \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:web": "vite --host 127.0.0.1",
+    "dev:server": "tsx watch server/index.ts",
+    "build": "tsc -b && vite build",
+    "start": "tsx server/index.ts",
+    "mcp": "tsx server/mcp.ts",
+    "serve": "npm run build && npm run start",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tree-sitter-wasms": "^0.1.13",
+    "ts-morph": "^24.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vitest": "^2.1.8",
+    "web-tree-sitter": "0.22.6",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1"
+  }
+}

@@ -1,0 +1,45 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Hu logo</title>
+  <desc id="desc">Transparent Hu monogram with circuit nodes.</desc>
+  <defs>
+    <linearGradient id="h-left" x1="55" y1="46" x2="103" y2="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1EA8FF"/>
+      <stop offset="1" stop-color="#2A27D7"/>
+    </linearGradient>
+    <linearGradient id="h-mid" x1="120" y1="56" x2="149" y2="203" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#14D4D4"/>
+      <stop offset="1" stop-color="#087EA6"/>
+    </linearGradient>
+    <linearGradient id="u-flow" x1="63" y1="111" x2="201" y2="155" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2431D4"/>
+      <stop offset="0.42" stop-color="#14C6D8"/>
+      <stop offset="1" stop-color="#12D083"/>
+    </linearGradient>
+    <linearGradient id="node" x1="164" y1="52" x2="206" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#10DCA4"/>
+      <stop offset="1" stop-color="#0CBF77"/>
+    </linearGradient>
+    <filter id="soft" x="36" y="36" width="184" height="184" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#0E5A99" flood-opacity="0.18"/>
+    </filter>
+    <filter id="innerShade" x="51" y="52" width="157" height="158" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#0B1B7A" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#soft)">
+    <path d="M69 79C69 57.46 86.46 40 108 40H113C116.31 40 119 42.69 119 46V187C119 194.18 113.18 200 106 200H82C74.82 200 69 194.18 69 187V79Z" fill="url(#h-left)"/>
+    <path d="M130 86C130 67.78 144.78 53 163 53H169C172.31 53 175 55.69 175 59V187C175 194.18 169.18 200 162 200H143C135.82 200 130 194.18 130 187V86Z" fill="url(#h-mid)"/>
+    <path d="M69 151C79.79 122.36 101.23 103.49 128.62 105.31C156.42 107.16 170.89 131.89 186.16 152.05C196.1 165.16 207.43 176.1 224 172.8V196.41C196.87 200.65 176.26 184.43 159.06 161.43C145.79 143.68 136.3 128.69 123.61 127.84C110.54 126.97 99.16 139.74 93.04 159.12C91.34 164.51 86.31 168 80.66 168H69V151Z" fill="url(#u-flow)" filter="url(#innerShade)"/>
+    <path d="M174 112C174 105.37 179.37 100 186 100H191C197.63 100 203 105.37 203 112V162C203 183.54 185.54 201 164 201H154V178H164C169.52 178 174 173.52 174 168V112Z" fill="#10D083"/>
+  </g>
+
+  <g stroke="url(#node)" stroke-width="7" stroke-linecap="round">
+    <path d="M164 116V86"/>
+    <path d="M183 102V58"/>
+    <path d="M200 110V78"/>
+  </g>
+  <circle cx="164" cy="86" r="10" fill="url(#node)"/>
+  <circle cx="183" cy="58" r="11" fill="url(#node)"/>
+  <circle cx="200" cy="78" r="10" fill="url(#node)"/>
+</svg>

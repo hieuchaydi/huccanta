@@ -1,0 +1,24 @@
+# Dependencies & build
+node_modules/
+dist/
+tsconfig.tsbuildinfo
+
+# Logs
+*.log
+
+# Dữ liệu người dùng (SQLite) — KHÔNG bao giờ commit
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Secrets / môi trường (vd ANTHROPIC_API_KEY khi tích hợp AI)
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
