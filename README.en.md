@@ -1,6 +1,8 @@
 # Huccanta
 
-A local-first call-flow visualizer for JavaScript/TypeScript codebases.
+> **X-ray your codebase before you touch it.**
+
+A local-first codebase doctor for JavaScript/TypeScript. **Today**: a function/call map plus hotspot detection, multi-language, running entirely on your machine. **Heading toward** an evidence-first *repo doctor* — see the **Vision: Repo Doctor** section below.
 
 **[Tiếng Việt](README.md)** · **English**
 
@@ -104,6 +106,29 @@ Configure it in an MCP client (e.g. Claude Code):
   }
 }
 ```
+
+## Vision: Repo Doctor
+
+> This is the **direction**, not shipped features. The sections above describe what runs today.
+
+The long-term goal: don't just *draw* the code — help you *decide what to change or delete, safely*. Every verdict comes with **evidence and a confidence score**, never a single-signal guess.
+
+**Three pillars we're building toward:**
+
+1. **Evidence-based verdicts.** e.g. a file marked "possibly unused (82%)" with the evidence listed: not an entry point, no file imports it, no export is used, absent from routes/config, not reached by any test, last modified 19 months ago. Never "dead" from one signal — dead-code detection is notoriously wrong around DI, reflection, dynamic imports and route decorators.
+2. **Simulate before you edit (Refactor Sandbox).** Pick delete file/function, rename, move, or extract a group → build a *shadow graph* and report the blast radius (broken imports, a route losing its handler, related tests, changes to cycles/fan-out/complexity) **without touching the filesystem**, then export a plan or patch.
+3. **Static × Runtime.** Overlay what *actually ran* (from tests/commands) onto what *could* be called: **green** = both · **grey** = static-only · **purple** = runtime-only (framework calling dynamically) · **red** = broken import/call/route.
+
+Plus a **missing-code detector**: unresolved imports; packages imported but not declared; a frontend API call with no matching route (and routes no one uses); env vars read but absent from `.env.example`; config pointing at nonexistent files; interfaces missing methods; routes without tests. For polyglot repos, link through **real contracts** instead of guessing: `fetch("/api/users")` → route/OpenAPI → `get_users()` → `users` table.
+
+**Roadmap (MVP — JS/TS first, for accuracy):**
+
+- **Phase 1 · Import Health Report** — list files found / analyzed / skipped / parse-errored; unresolved imports; entry points; files with no inbound/outbound deps; with confidence + evidence.
+- **Phase 2 · File-level graph** — switch **Function | File | Contract**, using real import/export (no name-based guessing).
+- **Phase 3 · Simulate delete** — drop nodes from a graph copy, list broken deps, recompute cycles/fan-in-out/complexity.
+- **Phase 4 · Test/runtime overlay** — declare a command (e.g. `npm test`), then overlay the runtime trace onto the static graph.
+
+**Non-goals:** no race to 30 languages · no Neo4j platform · no generic AI chatbot · no mysterious "health score" without evidence · no "dead because fan-in is 0" · no prettier-3D-graph race.
 
 ## Project layout
 

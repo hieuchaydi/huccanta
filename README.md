@@ -1,6 +1,8 @@
 # Huccanta
 
-Công cụ trực quan hoá luồng gọi hàm cho mã nguồn JavaScript/TypeScript, chạy 100% trên máy bạn.
+> **X-ray your codebase before you touch it.** — soi codebase trước khi bạn động vào.
+
+Bác sĩ codebase chạy local cho JavaScript/TypeScript. **Hôm nay**: bản đồ hàm/lời gọi + phát hiện điểm rối, đa ngôn ngữ, chạy 100% trên máy bạn. **Đang hướng tới** một *repo doctor* trả lời bằng bằng chứng — xem mục **Tầm nhìn: Repo Doctor** bên dưới.
 
 **Tiếng Việt** · **[English](README.en.md)**
 
@@ -104,6 +106,29 @@ Cấu hình cho một MCP client (ví dụ Claude Code):
   }
 }
 ```
+
+## Tầm nhìn: Repo Doctor
+
+> Đây là **hướng đi**, không phải tính năng đã có. Phần trên mô tả cái đang chạy hôm nay.
+
+Mục tiêu dài hạn: không chỉ *vẽ* code mà giúp *ra quyết định sửa/xóa an toàn*. Mỗi kết luận đi kèm **bằng chứng + độ tin cậy**, không phán từ một tín hiệu duy nhất.
+
+**Ba trụ cột đang hướng tới:**
+
+1. **Kết luận có bằng chứng.** Ví dụ một file "có thể thừa (82%)" kèm danh sách bằng chứng: không phải entry point, không ai import, export không được dùng, vắng mặt trong route/config, không test nào gọi tới, sửa lần cuối 19 tháng trước. Không bao giờ gọi "dead" chỉ từ một tín hiệu — dead-code rất dễ sai với DI, reflection, dynamic import, route decorator.
+2. **Giả lập trước khi sửa (Refactor Sandbox).** Chọn xóa file/hàm, đổi tên, di chuyển, tách nhóm → dựng "đồ thị bóng" và báo *blast radius* (import hỏng, route mất handler, test liên quan, thay đổi cycle/fan-out/complexity) mà **không đụng filesystem**, rồi mới xuất kế hoạch/patch.
+3. **Static × Runtime.** Phủ luồng "đã thực sự chạy" (từ test/command) lên "có thể gọi": **xanh** = cả hai thấy · **xám** = chỉ static · **tím** = chỉ runtime (framework gọi động) · **đỏ** = import/call/route hỏng.
+
+Kèm **Missing-code detector**: import không resolve; package import nhưng chưa khai báo; frontend gọi API không có route (và route không ai dùng); env đọc nhưng thiếu trong `.env.example`; config trỏ file không tồn tại; interface thiếu method; route không có test. Với dự án đa ngôn ngữ, nối qua **hợp đồng thực tế** thay vì đoán: `fetch("/api/users")` → route/OpenAPI → `get_users()` → bảng `users`.
+
+**Lộ trình (MVP — chỉ JS/TS trước cho chính xác):**
+
+- **GĐ 1 · Import Health Report** — liệt kê file tìm thấy / phân tích / bỏ qua / parse lỗi; unresolved import; entry point; file không có phụ thuộc vào–ra; kèm confidence + bằng chứng.
+- **GĐ 2 · Đồ thị mức file** — chế độ chuyển **Function | File | Contract**, dùng import/export thật (không đoán theo tên hàm).
+- **GĐ 3 · Giả lập xóa** — bỏ node khỏi bản sao đồ thị, liệt kê phụ thuộc hỏng, tính lại cycle/fan-in-out/complexity.
+- **GĐ 4 · Phủ test/runtime** — khai báo lệnh (vd `npm test`) rồi phủ trace runtime lên static graph.
+
+**Không làm:** không chạy đua 30 ngôn ngữ · không thành nền tảng Neo4j · không AI chat chung chung · không "điểm sức khỏe" bí ẩn thiếu bằng chứng · không gọi "dead" chỉ vì fan-in = 0 · không đua graph 3D.
 
 ## Cấu trúc thư mục
 

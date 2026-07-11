@@ -2,6 +2,17 @@
 
 Các thay đổi đáng chú ý của Huccanta được ghi ở đây. Theo [Keep a Changelog](https://keepachangelog.com/) và [SemVer](https://semver.org/).
 
+## [Chưa phát hành]
+
+### Định hướng — Repo Doctor
+
+Chuyển trọng tâm từ "trực quan hoá code" sang **bác sĩ codebase evidence-first** ("X-ray your codebase before you touch it"): kết luận kèm bằng chứng + độ tin cậy, giả lập xóa/sửa trước khi động vào (Refactor Sandbox), đối chiếu static × runtime, và missing-code detector. Xem mục *Tầm nhìn* trong [README](README.md). MVP bắt đầu với JS/TS:
+
+- **GĐ 1** — Import Health Report (file tìm thấy/bỏ qua/parse lỗi, unresolved import, entry point, orphan, confidence + bằng chứng).
+- **GĐ 2** — Đồ thị mức file (Function | File | Contract).
+- **GĐ 3** — Giả lập xóa (blast radius trên đồ thị bóng).
+- **GĐ 4** — Phủ test/runtime lên static graph.
+
 ## [0.3.0] — 2026-07-11
 
 Bản công khai đầu tiên trên GitHub. / First public release.
