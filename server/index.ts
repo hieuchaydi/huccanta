@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { analyzeProject } from './analyze';
+import { importHealthReport } from './importHealth';
 import type { SourceFileInput } from '../src/types';
 import { collectSourceFiles } from './scan';
 import { deleteProject, getProject, listProjects, saveProject, type ProjectMeta } from './db';
@@ -30,6 +31,19 @@ app.post('/api/analyze', async (req, res) => {
   }
   try {
     res.json(await analyzeProject(files));
+  } catch (error) {
+    res.status(500).json({ code: 'analyzeFailed', error: error instanceof Error ? error.message : 'Phân tích thất bại.' });
+  }
+});
+
+app.post('/api/import-health', (req, res) => {
+  const files = req.body?.files as SourceFileInput[] | undefined;
+  if (!Array.isArray(files) || files.length === 0) {
+    res.status(400).json({ code: 'missingFiles', error: 'Thiếu danh sách files để phân tích.' });
+    return;
+  }
+  try {
+    res.json(importHealthReport(files));
   } catch (error) {
     res.status(500).json({ code: 'analyzeFailed', error: error instanceof Error ? error.message : 'Phân tích thất bại.' });
   }

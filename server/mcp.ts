@@ -10,6 +10,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { Graph, SourceFileInput } from '../src/types';
 import { analyzeProject } from './analyze';
+import { importHealthReport } from './importHealth';
 import { collectSourceFiles } from './scan';
 
 // Cho phép "npx huccanta-mcp <folder>": nếu truyền thư mục, các tool có thể bỏ trống
@@ -130,6 +131,21 @@ server.registerTool(
       callees: graph.edges.filter((e) => e.from === id).map((e) => e.to),
       code: node.code
     });
+  }
+);
+
+server.registerTool(
+  'import_health',
+  {
+    title: 'Import Health Report',
+    description:
+      'GĐ 1 Repo Doctor (chỉ JS/TS): báo cáo sức khoẻ import ở mức file — file có thể thừa (kèm bằng chứng + độ tin cậy), ' +
+      'entry point, import tương đối gãy, và thống kê. Dựa trên import/export THẬT (ts-morph), không đoán theo tên. ' +
+      'Nhận "path" (thư mục) hoặc "files".',
+    inputSchema: { ...sourceShape }
+  },
+  async ({ path, files }) => {
+    return json(importHealthReport(await loadFiles({ path, files })));
   }
 );
 

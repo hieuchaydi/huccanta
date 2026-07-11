@@ -45,3 +45,30 @@ export interface SourceFileInput {
   path: string;
   content: string;
 }
+
+// ---- GĐ 1: Import Health Report (mức file, dựa trên import/export thật) ----
+export type FileVerdict = 'ok' | 'entry' | 'possibly-unused' | 'parse-error';
+
+export interface FileHealth {
+  path: string;
+  verdict: FileVerdict;
+  imports: number; // số import phân giải được tới file khác trong project (outbound)
+  importedBy: number; // số file import file này (inbound)
+  exports: number; // số symbol được export
+  unresolvedImports: string[]; // import tương đối trỏ tới file không tồn tại (gãy)
+  confidence?: number; // chỉ cho 'possibly-unused' (0–100)
+  evidence: string[]; // bằng chứng cho kết luận
+  entryReason?: string; // vì sao coi là entry (nếu verdict = 'entry')
+  error?: string; // thông báo lỗi (nếu verdict = 'parse-error')
+}
+
+export interface ImportHealthReport {
+  summary: {
+    files: number;
+    entryPoints: number;
+    possiblyUnused: number;
+    parseErrors: number;
+    unresolvedImports: number;
+  };
+  files: FileHealth[];
+}

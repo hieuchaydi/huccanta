@@ -60,7 +60,8 @@ UI (React/Vite, SVG) ──/api (proxy dev, cùng cổng ở prod)──▶ Anal
 | [server/index.ts](server/index.ts) | Express routes + phục vụ dist ở prod. |
 | [server/db.ts](server/db.ts) | SQLite: `listProjects`/`getProject`/`saveProject`/`deleteProject`. |
 | [server/scan.ts](server/scan.ts) | Duyệt thư mục/repo, lọc file nguồn, bỏ dir rác. |
-| [server/mcp.ts](server/mcp.ts) | MCP server (stdio); tool `analyze_code`/`get_function` dùng `analyzeProject` (đa ngôn ngữ). |
+| [server/importHealth.ts](server/importHealth.ts) | **GĐ 1 Repo Doctor** — `importHealthReport(files)`: sức khoẻ import mức file (JS/TS, ts-morph in-memory FS). |
+| [server/mcp.ts](server/mcp.ts) | MCP server (stdio); tool `analyze_code`/`get_function` (đa ngôn ngữ) + `import_health` (GĐ 1). |
 | [bin/huccanta-mcp.mjs](bin/huccanta-mcp.mjs) | Bin cho packet: `npx huccanta-mcp <folder>`. |
 | [tests/analyzer.test.ts](tests/analyzer.test.ts), [tests/multilang.test.ts](tests/multilang.test.ts) | Unit test JS/TS + đa ngôn ngữ (`analyzeProject`). |
 
@@ -102,6 +103,12 @@ UI (React/Vite, SVG) ──/api (proxy dev, cùng cổng ở prod)──▶ Anal
 2. Thêm một mục vào mảng `CONFIGS` trong [server/treesitter.ts](server/treesitter.ts): `grammar`, `extensions`, `defTypes` (node type định nghĩa hàm), `nameQuery` (bắt `@def` + `@name`), `callQuery` (bắt `@c` = tên hàm gọi), `classTypes` (bao ngoài để tạo tiền tố).
 3. Thêm đuôi file vào `SOURCE_EXT` trong [server/scan.ts](server/scan.ts) và `JS_TS` regex KHÔNG được chứa nó.
 4. Viết query đúng field name của grammar — spike nhanh: `node -e` load wasm rồi `language.query(...)` (xem git history của các query hiện có làm mẫu). Thêm case vào [tests/multilang.test.ts](tests/multilang.test.ts).
+
+### Import Health / Repo Doctor GĐ 1 ([server/importHealth.ts](server/importHealth.ts))
+
+- Dùng ts-morph **in-memory FS** (chỉ phân giải trong đám file input, không đụng `node_modules` host) → deterministic. **Path từ `getFilePath()` có `/` đầu** (vd `/src/a.ts`) — `normalizePath` phải bỏ `/` đầu để khớp key input, nếu không mọi record bị skip.
+- **Chỉ bắt import/export tĩnh** (`import ... from`, `export ... from`). **Dynamic import** (`await import(...)`) và `require()` KHÔNG bắt được → file chỉ được nạp động (vd `server/mcp.ts` qua bin) sẽ hiện `possibly-unused` **độ tin cậy thấp** — đây là đúng thiết kế (confidence ≤ 85, kèm bằng chứng), không phán "dead 100%".
+- Import tương đối tới **asset** (css/json/svg/ảnh… theo `ASSET_EXT`) KHÔNG tính là gãy; **bare package** (không tương đối) coi là phụ thuộc ngoài, bỏ qua. Chỉ module JS/TS tương đối không phân giải được = "gãy".
 
 ## Kiểm thử MCP nhanh
 

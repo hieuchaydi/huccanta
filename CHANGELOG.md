@@ -4,6 +4,10 @@ Các thay đổi đáng chú ý của Huccanta được ghi ở đây. Theo [Kee
 
 ## [Chưa phát hành]
 
+### Đã thêm
+
+- **GĐ 1 · Import Health Report** (chỉ JS/TS) — báo cáo sức khoẻ import ở mức file dựa trên import/export thật (ts-morph, in-memory FS): file entry / có thể thừa (kèm bằng chứng + độ tin cậy ≤ 85%), import tương đối gãy (bỏ qua asset css/json/svg…), và thống kê. Expose qua tool MCP `import_health` và `POST /api/import-health`.
+
 ### Định hướng — Repo Doctor
 
 Chuyển trọng tâm từ "trực quan hoá code" sang **bác sĩ codebase evidence-first** ("X-ray your codebase before you touch it"): kết luận kèm bằng chứng + độ tin cậy, giả lập xóa/sửa trước khi động vào (Refactor Sandbox), đối chiếu static × runtime, và missing-code detector. Xem mục *Tầm nhìn* trong [README](README.md). MVP bắt đầu với JS/TS:

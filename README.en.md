@@ -96,6 +96,7 @@ Two tools ([server/mcp.ts](server/mcp.ts)):
 |---|---|
 | `analyze_code` | Scans a `path` (local folder) or inline `files`; returns an overview (functions, calls, hotspots, cycles) plus ranked hotspots. When launched with a folder (`npx huccanta-mcp <folder>`), the arguments can be omitted. |
 | `get_function` | Detail of one function by `id` (`file#name`): code, callers, callees, issues. |
+| `import_health` | **(Repo Doctor Phase 1, JS/TS)** File-level import health report: possibly-unused files (with evidence + confidence), entry points, broken relative imports, stats. |
 
 Configure it in an MCP client (e.g. Claude Code):
 
@@ -123,7 +124,7 @@ Plus a **missing-code detector**: unresolved imports; packages imported but not 
 
 **Roadmap (MVP — JS/TS first, for accuracy):**
 
-- **Phase 1 · Import Health Report** — list files found / analyzed / skipped / parse-errored; unresolved imports; entry points; files with no inbound/outbound deps; with confidence + evidence.
+- ✅ **Phase 1 · Import Health Report** *(shipped — `import_health` tool + `POST /api/import-health`)* — entry / possibly-unused files (confidence + evidence); unresolved imports (assets ignored); stats. Based on ts-morph's real import/export resolution.
 - **Phase 2 · File-level graph** — switch **Function | File | Contract**, using real import/export (no name-based guessing).
 - **Phase 3 · Simulate delete** — drop nodes from a graph copy, list broken deps, recompute cycles/fan-in-out/complexity.
 - **Phase 4 · Test/runtime overlay** — declare a command (e.g. `npm test`), then overlay the runtime trace onto the static graph.
