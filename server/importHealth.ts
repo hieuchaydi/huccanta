@@ -2,7 +2,8 @@
 // Làm việc ở MỨC FILE dựa trên import/export THẬT (ts-morph resolve symbol), không đoán theo tên.
 // Dùng in-memory FS: chỉ phân giải trong đám file được đưa vào → bare package = "ngoài",
 // import tương đối trỏ tới file không có = "gãy" (unresolved).
-import { ModuleKind, Project, ScriptTarget, ts } from 'ts-morph';
+// Bắt cả: import tĩnh, re-export, dynamic import(), require(), shebang, và parse lỗi (syntactic).
+import { ModuleKind, Node, Project, ScriptTarget, SyntaxKind, ts } from 'ts-morph';
 import type { FileHealth, FileVerdict, ImportHealthReport, SourceFileInput } from '../src/types';
 
 const JS_TS = /\.(cjs|mjs|mts|cts|js|jsx|ts|tsx)$/i;
@@ -12,6 +13,9 @@ const CONFIG_NAME = /\.(config|conf)\.[cm]?[jt]s$/i;
 const ENTRY_NAME = /(^|\/)(index|main|app|server|cli|mod|entry|bootstrap)\.[cm]?[jt]sx?$/i;
 // Import tới các asset này (không phải module JS/TS) không tính là "gãy" khi không phân giải được.
 const ASSET_EXT = /\.(css|scss|sass|less|styl|json|svg|png|jpe?g|gif|webp|avif|ico|woff2?|ttf|otf|eot|md|txt|wasm|ya?ml|glsl|vert|frag|mp[34]|webm|ogg|wav)$/i;
+// Thứ tự thử khi phân giải specifier tương đối của dynamic import()/require() về file trong project.
+const RESOLVE_EXTS = ['', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'];
+const INDEX_FILES = ['/index.ts', '/index.tsx', '/index.js', '/index.jsx', '/index.mjs', '/index.cjs'];
 
 function normalizePath(p: string) {
   // In-memory FS của ts-morph trả path có "/" đầu (vd "/src/a.ts") — chuẩn hoá để khớp key input.
@@ -22,7 +26,31 @@ function isRelative(spec: string) {
   return spec.startsWith('./') || spec.startsWith('../') || spec.startsWith('/');
 }
 
-function entryReason(path: string): string | undefined {
+function dirOf(p: string) {
+  const i = p.lastIndexOf('/');
+  return i === -1 ? '' : p.slice(0, i);
+}
+
+function joinPath(dir: string, rel: string) {
+  const parts = dir ? dir.split('/') : [];
+  for (const seg of rel.split('/')) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') parts.pop();
+    else parts.push(seg);
+  }
+  return parts.join('/');
+}
+
+// Resolver tối giản cho dynamic import()/require() (ts-morph không tự resolve chúng như import tĩnh).
+function resolveRelative(fromPath: string, spec: string, added: Set<string>): string | undefined {
+  const base = joinPath(dirOf(fromPath), spec);
+  for (const ext of RESOLVE_EXTS) if (added.has(base + ext)) return base + ext;
+  for (const idx of INDEX_FILES) if (added.has(base + idx)) return base + idx;
+  return undefined;
+}
+
+function entryReason(path: string, shebang: boolean): string | undefined {
+  if (shebang) return 'script có shebang (#!) — chạy trực tiếp';
   if (TEST_NAME.test(path)) return 'file test (được test runner chạy)';
   if (CONFIG_NAME.test(path)) return 'file cấu hình';
   if (/(^|\/)bin\//.test(path)) return 'nằm trong bin/';
@@ -39,12 +67,13 @@ export function importHealthReport(files: SourceFileInput[]): ImportHealthReport
       allowJs: true,
       checkJs: false,
       jsx: ts.JsxEmit.React,
-      module: ModuleKind.CommonJS,
+      module: ModuleKind.ESNext,
       target: ScriptTarget.ES2022
     }
   });
 
   const added = new Set<string>();
+  const shebangs = new Set<string>();
   const health = new Map<string, FileHealth>();
 
   for (const file of inputs) {
@@ -62,6 +91,7 @@ export function importHealthReport(files: SourceFileInput[]): ImportHealthReport
     try {
       project.createSourceFile(path, file.content, { overwrite: true });
       added.add(path);
+      if (file.content.startsWith('#!')) shebangs.add(path);
     } catch (error) {
       record.verdict = 'parse-error';
       record.error = error instanceof Error ? error.message : String(error);
@@ -70,37 +100,62 @@ export function importHealthReport(files: SourceFileInput[]): ImportHealthReport
   }
 
   project.resolveSourceFileDependencies();
+  const program = project.getProgram().compilerObject;
 
-  // Đếm import/export và cạnh phụ thuộc mức file.
   for (const source of project.getSourceFiles()) {
-    const path = normalizePath(source.getFilePath());
-    const record = health.get(path);
+    const key = normalizePath(source.getFilePath());
+    const record = health.get(key);
     if (!record || record.verdict === 'parse-error') continue;
+
+    // Parse lỗi thật = có syntactic diagnostics (không tính lỗi type).
+    const syntactic = program.getSyntacticDiagnostics(source.compilerNode);
+    if (syntactic.length > 0) {
+      record.verdict = 'parse-error';
+      record.error = ts.flattenDiagnosticMessageText(syntactic[0].messageText, ' ');
+      continue;
+    }
 
     record.exports = source.getExportSymbols().length;
 
-    // import + re-export (export ... from './x') đều là phụ thuộc.
-    const deps = [...source.getImportDeclarations(), ...source.getExportDeclarations()];
-    for (const decl of deps) {
+    const targets = new Set<string>(); // file trong project mà file này phụ thuộc (dedup)
+    const unresolved = new Set<string>();
+
+    // import tĩnh + re-export (export ... from './x')
+    for (const decl of [...source.getImportDeclarations(), ...source.getExportDeclarations()]) {
       const spec = decl.getModuleSpecifierValue();
-      if (!spec) continue; // export { x } không có "from"
+      if (!spec) continue;
       const target = decl.getModuleSpecifierSourceFile();
-      const targetPath = target ? normalizePath(target.getFilePath()) : undefined;
-      if (targetPath && added.has(targetPath)) {
-        record.imports += 1;
-        const targetRecord = health.get(targetPath);
-        if (targetRecord) targetRecord.importedBy += 1;
-      } else if (isRelative(spec) && !ASSET_EXT.test(spec)) {
-        record.unresolvedImports.push(spec); // import tương đối trỏ tới module JS/TS không có = gãy
-      }
-      // spec dạng bare (package) không phân giải được → coi là phụ thuộc ngoài, bỏ qua.
+      const targetKey = target ? normalizePath(target.getFilePath()) : undefined;
+      if (targetKey && added.has(targetKey)) targets.add(targetKey);
+      else if (isRelative(spec) && !ASSET_EXT.test(spec)) unresolved.add(spec);
+    }
+
+    // dynamic import() + require() — ts-morph không coi là import declaration.
+    for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const expr = call.getExpression();
+      const first = call.getArguments()[0];
+      const isDynImport = expr.getKind() === SyntaxKind.ImportKeyword;
+      const isRequire = Node.isIdentifier(expr) && expr.getText() === 'require';
+      if (!((isDynImport || isRequire) && first && Node.isStringLiteral(first))) continue;
+      const spec = first.getLiteralValue();
+      if (!isRelative(spec)) continue;
+      const targetKey = resolveRelative(key, spec, added);
+      if (targetKey) targets.add(targetKey);
+      else if (!ASSET_EXT.test(spec)) unresolved.add(spec);
+    }
+
+    record.imports = targets.size;
+    record.unresolvedImports = [...unresolved];
+    for (const targetKey of targets) {
+      const targetRecord = health.get(targetKey);
+      if (targetRecord) targetRecord.importedBy += 1;
     }
   }
 
   // Chấm kết luận + bằng chứng.
   for (const record of health.values()) {
     if (record.verdict === 'parse-error') continue;
-    const reason = entryReason(record.path);
+    const reason = entryReason(record.path, shebangs.has(record.path));
     if (reason) {
       record.verdict = 'entry';
       record.entryReason = reason;
@@ -108,7 +163,10 @@ export function importHealthReport(files: SourceFileInput[]): ImportHealthReport
     }
     if (record.importedBy === 0) {
       record.verdict = 'possibly-unused';
-      const evidence: string[] = ['Không file nào trong project import file này', 'Không phải entry point (index/main/test/config/bin)'];
+      const evidence: string[] = [
+        'Không file nào trong project import file này (kể cả dynamic import/require)',
+        'Không phải entry point (index/main/test/config/bin/shebang)'
+      ];
       let confidence = 55;
       if (record.exports > 0) {
         confidence += 15;

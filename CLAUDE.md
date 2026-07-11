@@ -107,7 +107,7 @@ UI (React/Vite, SVG) ──/api (proxy dev, cùng cổng ở prod)──▶ Anal
 ### Import Health / Repo Doctor GĐ 1 ([server/importHealth.ts](server/importHealth.ts))
 
 - Dùng ts-morph **in-memory FS** (chỉ phân giải trong đám file input, không đụng `node_modules` host) → deterministic. **Path từ `getFilePath()` có `/` đầu** (vd `/src/a.ts`) — `normalizePath` phải bỏ `/` đầu để khớp key input, nếu không mọi record bị skip.
-- **Chỉ bắt import/export tĩnh** (`import ... from`, `export ... from`). **Dynamic import** (`await import(...)`) và `require()` KHÔNG bắt được → file chỉ được nạp động (vd `server/mcp.ts` qua bin) sẽ hiện `possibly-unused` **độ tin cậy thấp** — đây là đúng thiết kế (confidence ≤ 85, kèm bằng chứng), không phán "dead 100%".
+- Bắt: import/export **tĩnh**, re-export, **dynamic `import()`**, **`require()`** (resolver tương đối tự viết `resolveRelative`), và **shebang** `#!` → entry. Parse lỗi = **syntactic diagnostics** (`program.getSyntacticDiagnostics`, KHÔNG tính lỗi type). CHƯA bắt: specifier động (biến/template string) và tham chiếu qua config/route (framework gọi động) → file như vậy vẫn có thể hiện `possibly-unused` **độ tin cậy thấp** (≤85, kèm bằng chứng), không phán "dead 100%".
 - Import tương đối tới **asset** (css/json/svg/ảnh… theo `ASSET_EXT`) KHÔNG tính là gãy; **bare package** (không tương đối) coi là phụ thuộc ngoài, bỏ qua. Chỉ module JS/TS tương đối không phân giải được = "gãy".
 
 ## Kiểm thử MCP nhanh

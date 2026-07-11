@@ -6,7 +6,7 @@ Các thay đổi đáng chú ý của Huccanta được ghi ở đây. Theo [Kee
 
 ### Đã thêm
 
-- **GĐ 1 · Import Health Report** (chỉ JS/TS) — báo cáo sức khoẻ import ở mức file dựa trên import/export thật (ts-morph, in-memory FS): file entry / có thể thừa (kèm bằng chứng + độ tin cậy ≤ 85%), import tương đối gãy (bỏ qua asset css/json/svg…), và thống kê. Expose qua tool MCP `import_health` và `POST /api/import-health`.
+- **GĐ 1 · Import Health Report** (chỉ JS/TS) — báo cáo sức khoẻ import ở mức file dựa trên import/export thật (ts-morph, in-memory FS): file entry / có thể thừa (kèm bằng chứng + độ tin cậy ≤ 85%), import tương đối gãy (bỏ qua asset css/json/svg…), và thống kê. Bắt cả **dynamic `import()`, `require()`, shebang** (giảm false positive) và **parse-error thật** (syntactic). Expose qua tool MCP `import_health` và `POST /api/import-health`.
 
 ### Định hướng — Repo Doctor
 

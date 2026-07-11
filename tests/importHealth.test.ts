@@ -71,4 +71,34 @@ describe('importHealthReport (GĐ 1)', () => {
     expect(fileByPath(report, 'lib.ts').importedBy).toBe(1);
     expect(fileByPath(report, 'lib.ts').verdict).toBe('ok');
   });
+
+  it('dynamic import() và require() cũng nối phụ thuộc (không báo nhầm thừa)', () => {
+    const report = importHealthReport([
+      { path: 'index.ts', content: "async function boot(){ await import('./lazy'); const u = require('./util'); return u; }\nboot();" },
+      { path: 'lazy.ts', content: 'export const lazy = 1;' },
+      { path: 'util.ts', content: 'module.exports = { x: 1 };' }
+    ]);
+    expect(fileByPath(report, 'lazy.ts').importedBy).toBe(1);
+    expect(fileByPath(report, 'lazy.ts').verdict).toBe('ok');
+    expect(fileByPath(report, 'util.ts').importedBy).toBe(1);
+    expect(report.summary.possiblyUnused).toBe(0);
+  });
+
+  it('file có shebang là entry (không gắn cờ thừa)', () => {
+    const report = importHealthReport([{ path: 'scripts/run.js', content: '#!/usr/bin/env node\nconsole.log("go");' }]);
+    const f = fileByPath(report, 'scripts/run.js');
+    expect(f.verdict).toBe('entry');
+    expect(f.entryReason).toMatch(/shebang/i);
+  });
+
+  it('phát hiện parse-error (syntactic), không phải lỗi type', () => {
+    const report = importHealthReport([
+      { path: 'broken.ts', content: 'function bad( {' },
+      { path: 'typeerr.ts', content: 'const n: number = "not a number"; export { n };' }
+    ]);
+    expect(fileByPath(report, 'broken.ts').verdict).toBe('parse-error');
+    expect(fileByPath(report, 'broken.ts').error).toBeTruthy();
+    expect(fileByPath(report, 'typeerr.ts').verdict).not.toBe('parse-error'); // lỗi type KHÔNG phải parse-error
+    expect(report.summary.parseErrors).toBe(1);
+  });
 });
