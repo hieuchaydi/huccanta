@@ -1,6 +1,5 @@
 # Huccanta
 
-> **X-ray your codebase before you touch it.**
 
 A local-first codebase doctor for JavaScript/TypeScript. **Available (1.0)**: a function/call map plus hotspot detection in the UI (multi-language); and — via **MCP tools + HTTP API** — an **Import Health Report** (unused/broken files, with evidence) and a **Refactor Sandbox** (simulate deleting a file/function → blast radius, without touching files). Runs entirely on your machine. Still heading toward the full *repo doctor* — see the **Vision: Repo Doctor** section below.
 
