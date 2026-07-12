@@ -158,6 +158,8 @@ button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
   justify-content: center;
 }
 .btn.select { padding-right: 28px; }
+.seg { display: inline-flex; gap: 2px; }
+.seg .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .hidden-input { display: none; }
 .depth-control {
   min-height: 32px;

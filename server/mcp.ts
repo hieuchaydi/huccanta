@@ -11,6 +11,7 @@ import { z } from 'zod';
 import type { Graph, SourceFileInput } from '../src/types';
 import { analyzeProject } from './analyze';
 import { importHealthReport } from './importHealth';
+import { fileGraphReport } from './fileGraph';
 import { simulateChange } from './simulate';
 import { collectSourceFiles } from './scan';
 
@@ -74,7 +75,7 @@ function rankedHotspots(graph: Graph, limit: number) {
 
 const json = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
 
-const server = new McpServer({ name: 'huccanta', version: '0.2.0' });
+const server = new McpServer({ name: 'huccanta', version: '0.3.0' });
 
 server.registerTool(
   'analyze_code',
@@ -147,6 +148,22 @@ server.registerTool(
   },
   async ({ path, files }) => {
     return json(importHealthReport(await loadFiles({ path, files })));
+  }
+);
+
+server.registerTool(
+  'file_graph',
+  {
+    title: 'File dependency graph',
+    description:
+      'GĐ 2 Repo Doctor (chỉ JS/TS): đồ thị phụ thuộc MỨC FILE dựa trên import/export THẬT ' +
+      '(ts-morph, không đoán theo tên). Node = file, cạnh = quan hệ import. Trả node (entry/normal/orphan, ' +
+      'imports/importedBy/exports/loc, inCycle), cạnh (đánh dấu cycle) và thống kê (vòng phụ thuộc, orphan…). ' +
+      'Nhận "path" (thư mục) hoặc "files".',
+    inputSchema: { ...sourceShape }
+  },
+  async ({ path, files }) => {
+    return json(fileGraphReport(await loadFiles({ path, files })));
   }
 );
 

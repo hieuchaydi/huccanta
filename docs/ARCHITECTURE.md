@@ -60,7 +60,9 @@ UI (React/Vite, SVG) ──/api (proxy dev, cùng cổng ở prod)──▶ Anal
 | [server/index.ts](server/index.ts) | Express routes + phục vụ dist ở prod. |
 | [server/db.ts](server/db.ts) | SQLite: `listProjects`/`getProject`/`saveProject`/`deleteProject`. |
 | [server/scan.ts](server/scan.ts) | Duyệt thư mục/repo, lọc file nguồn, bỏ dir rác. |
-| [server/importHealth.ts](server/importHealth.ts) | **Repo Doctor GĐ 1** — `importHealthReport(files)`: sức khoẻ import mức file (JS/TS, ts-morph in-memory FS). |
+| [server/moduleGraph.ts](server/moduleGraph.ts) | **Lõi đồ thị phụ thuộc mức file** dùng chung — `collectFileDeps(files)` + hằng/helper (`normalizePath`, `entryReason`, regex JS/TS/asset). ts-morph in-memory FS. |
+| [server/importHealth.ts](server/importHealth.ts) | **Repo Doctor GĐ 1** — `importHealthReport(files)`: sức khoẻ import mức file. Dùng `collectFileDeps` rồi áp *chính sách* verdict/bằng chứng. |
+| [server/fileGraph.ts](server/fileGraph.ts) | **Repo Doctor GĐ 2** — `fileGraphReport(files)`: đồ thị mức file (node=file, cạnh=import thật) + Tarjan SCC bắt vòng phụ thuộc + phân loại entry/normal/orphan. Dùng `collectFileDeps`. |
 | [server/simulate.ts](server/simulate.ts) | **Refactor Sandbox (GĐ 3)** — `simulateChange(files, change)`: giả lập xóa file/hàm trên đồ thị bóng → blast radius + delta metric. |
 | [server/mcp.ts](server/mcp.ts) | MCP server (stdio); tool `analyze_code`/`get_function` (đa ngôn ngữ) + `import_health` + `simulate_change`. |
 | [bin/huccanta-mcp.mjs](bin/huccanta-mcp.mjs) | Bin cho packet: `npx huccanta-mcp <folder>`. |
@@ -110,6 +112,12 @@ UI (React/Vite, SVG) ──/api (proxy dev, cùng cổng ở prod)──▶ Anal
 - Dùng ts-morph **in-memory FS** (chỉ phân giải trong đám file input, không đụng `node_modules` host) → deterministic. **Path từ `getFilePath()` có `/` đầu** (vd `/src/a.ts`) — `normalizePath` phải bỏ `/` đầu để khớp key input, nếu không mọi record bị skip.
 - Bắt: import/export **tĩnh**, re-export, **dynamic `import()`**, **`require()`** (resolver tương đối tự viết `resolveRelative`), và **shebang** `#!` → entry. Parse lỗi = **syntactic diagnostics** (`program.getSyntacticDiagnostics`, KHÔNG tính lỗi type). CHƯA bắt: specifier động (biến/template string) và tham chiếu qua config/route (framework gọi động) → file như vậy vẫn có thể hiện `possibly-unused` **độ tin cậy thấp** (≤85, kèm bằng chứng), không phán "dead 100%".
 - Import tương đối tới **asset** (css/json/svg/ảnh… theo `ASSET_EXT`) KHÔNG tính là gãy; **bare package** (không tương đối) coi là phụ thuộc ngoài, bỏ qua. Chỉ module JS/TS tương đối không phân giải được = "gãy".
+
+### File Graph / Repo Doctor GĐ 2 ([server/fileGraph.ts](server/fileGraph.ts) + [server/moduleGraph.ts](server/moduleGraph.ts))
+
+- **Tách lõi dùng chung**: `collectFileDeps(files)` trong `moduleGraph.ts` dựng đồ thị phụ thuộc thô (targets/unresolved/exports/shebang/parseError mỗi file) bằng đúng cơ chế resolve của Import Health. `importHealthReport` và `fileGraphReport` **cùng gọi** hàm này — đừng để hai bên trôi lệch. `moduleGraph.ts` giữ *dữ liệu*; verdict/bằng chứng là *chính sách* riêng của Import Health.
+- `fileGraphReport`: node = file (kể cả file parse-error, khi đó không có cạnh ra), cạnh = import thật (bỏ self-edge nhưng self-import vẫn đánh `inCycle`). **Tarjan SCC** trên đồ thị file → `inCycle` (SCC size>1 hoặc self-loop) + `edge.cycle`. `kind`: `entry` (theo `entryReason`), `orphan` (không entry & `importedBy===0`), else `normal`. Output đã **sort** ổn định (test so trực tiếp).
+- **Server-only** (ts-morph/`node:*`) — KHÔNG import từ `src/` client. UI ([src/App.tsx](src/App.tsx)) gọi `/api/file-graph`, rồi `fileGraphToGraph` map `FileGraph`→`Graph` để tái dùng layout + renderer SVG; state `viewMode` chọn `activeGraph` (mức hàm hay mức file), còn session/baseline/save vẫn bám graph mức hàm. File-mode chỉ khả dụng khi có `sourceFiles` trên máy (quét Git lưu server-side nên nút File bị vô hiệu).
 
 ## Kiểm thử MCP nhanh
 

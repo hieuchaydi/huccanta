@@ -73,6 +73,43 @@ export interface ImportHealthReport {
   files: FileHealth[];
 }
 
+// ---- GĐ 2: Đồ thị mức file (dựa trên import/export thật, chỉ JS/TS) ----
+export type FileNodeKind = 'entry' | 'normal' | 'orphan';
+// orphan = không ai import & không phải entry (đồng bộ với 'possibly-unused' của Import Health)
+
+export interface FileGraphNode {
+  id: string; // = path đã normalize (vd "src/auth.ts"). Ổn định, khớp FileHealth.path.
+  path: string; // = id (giữ cả hai cho tiện đọc phía UI)
+  label: string; // tên hiển thị ngắn: basename, hoặc "dir/basename" nếu trùng basename
+  kind: FileNodeKind;
+  imports: number; // outbound: số file khác file này import (dedup)
+  importedBy: number; // inbound: số file import file này
+  exports: number; // số symbol export
+  loc: number; // số dòng (đếm '\n' + 1) — để ước lượng "kích thước" node
+  inCycle: boolean; // nằm trong vòng phụ thuộc file (import cycle)
+  unresolved: number; // số import tương đối gãy (từ file này)
+}
+
+export interface FileGraphEdge {
+  from: string; // id file import
+  to: string; // id file bị import
+  cycle: boolean; // cạnh nằm trong một vòng phụ thuộc (SCC)
+}
+
+export interface FileGraph {
+  nodes: FileGraphNode[];
+  edges: FileGraphEdge[];
+  summary: {
+    files: number;
+    edges: number;
+    cycles: number; // số SCC có kích thước > 1 (hoặc self-loop)
+    filesInCycle: number; // số file thuộc một vòng phụ thuộc
+    entries: number;
+    orphans: number;
+    unresolvedImports: number;
+  };
+}
+
 // ---- Refactor Sandbox: giả lập một thay đổi trên "đồ thị bóng", không đụng filesystem ----
 export type ChangeKind = 'delete-file' | 'delete-function';
 

@@ -3,6 +3,7 @@ import {
   FolderOpen,
   GitBranch,
   Layers3,
+  Boxes,
   Maximize2,
   Moon,
   Play,
@@ -18,7 +19,7 @@ import {
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { layoutGraph, type LayoutMode, NODE_HEIGHT, nodeWidth } from './layout';
 import { type Lang, makeT, type TFn } from './i18n';
-import type { Graph, GraphEdge, GraphNode, SourceFileInput } from './types';
+import type { FileGraph, Graph, GraphEdge, GraphNode, SourceFileInput } from './types';
 
 const FILE_HUES = ['#3F5BF6', '#12A669', '#C77B00', '#8B5CF6', '#E23D4B', '#0E9AA7', '#0891B2', '#DB2777'];
 const SOURCE_EXT = /\.(cjs|mjs|js|jsx|ts|tsx)$/i;
@@ -101,6 +102,30 @@ function log(x){ return x; }`
 ];
 
 type ViewBox = { x: number; y: number; s: number };
+// Mức đồ thị hiển thị. 'contract' để chỗ trống cho GĐ tương lai (route/OpenAPI), chưa render.
+type ViewMode = 'function' | 'file';
+
+// Map FileGraph (mức file) → Graph để tái dùng nguyên bộ layout + renderer SVG hiện có.
+function fileGraphToGraph(fg: FileGraph): Graph {
+  return {
+    nodes: fg.nodes.map((n) => ({
+      id: n.path,
+      name: n.label,
+      file: n.path,
+      line: 1,
+      code: '',
+      body: '',
+      complexity: n.imports + n.importedBy,
+      fanIn: n.importedBy,
+      fanOut: n.imports,
+      inCycle: n.inCycle,
+      issues: [],
+      level: n.inCycle ? 'hot' : n.kind === 'orphan' ? 'warn' : 'ok',
+      score: n.importedBy * 2 + n.imports
+    })),
+    edges: fg.edges.map((e) => ({ from: e.from, to: e.to, cycle: e.cycle }))
+  };
+}
 type DragState =
   | { kind: 'pan'; x: number; y: number; moved: boolean }
   | { kind: 'node'; id: string; x: number; y: number; moved: boolean };
@@ -420,6 +445,8 @@ export function App() {
   });
   const t = useMemo<TFn>(() => makeT(lang), [lang]);
   const [graph, setGraph] = useState<Graph | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('function');
+  const [fileGraphView, setFileGraphView] = useState<Graph | null>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('layered');
   const [groupByFile, setGroupByFile] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
@@ -459,27 +486,33 @@ export function App() {
     localStorage.setItem(LANG_KEY, lang);
   }, [lang]);
 
-  const files = useMemo(() => [...new Set(graph?.nodes.map((node) => node.file) ?? [])].sort(), [graph]);
-  const maps = useMemo(() => (graph ? graphMaps(graph) : null), [graph]);
+  // Đồ thị đang hiển thị: mức hàm (graph) hoặc mức file (fileGraphView). Mọi memo/tương tác render
+  // dùng activeGraph; còn session/baseline/save vẫn thao tác trên graph mức hàm.
+  const activeGraph = viewMode === 'file' ? fileGraphView : graph;
+  const setActiveGraph: React.Dispatch<React.SetStateAction<Graph | null>> =
+    viewMode === 'file' ? setFileGraphView : setGraph;
+
+  const files = useMemo(() => [...new Set(activeGraph?.nodes.map((node) => node.file) ?? [])].sort(), [activeGraph]);
+  const maps = useMemo(() => (activeGraph ? graphMaps(activeGraph) : null), [activeGraph]);
   const trace = useMemo(() => {
-    if (!graph || !selected || !tracing) return { nodes: new Set<string>(), edges: new Set<string>() };
-    return traceFrom(graph, selected, depth);
-  }, [graph, selected, tracing, depth]);
+    if (!activeGraph || !selected || !tracing) return { nodes: new Set<string>(), edges: new Set<string>() };
+    return traceFrom(activeGraph, selected, depth);
+  }, [activeGraph, selected, tracing, depth]);
 
   const visibleNodes = useMemo(() => {
-    if (!graph) return [];
-    return graph.nodes.filter((node) => {
+    if (!activeGraph) return [];
+    return activeGraph.nodes.filter((node) => {
       if (hiddenFiles.has(node.file)) return false;
       if (onlyIssues && node.level === 'ok') return false;
       return hasNodeMatch(node, nodeQuery);
     });
-  }, [graph, hiddenFiles, nodeQuery, onlyIssues]);
+  }, [activeGraph, hiddenFiles, nodeQuery, onlyIssues]);
 
   const visibleNodeIds = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
   const visibleEdges = useMemo(() => {
-    if (!graph) return [];
-    return graph.edges.filter((edge) => visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to));
-  }, [graph, visibleNodeIds]);
+    if (!activeGraph) return [];
+    return activeGraph.edges.filter((edge) => visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to));
+  }, [activeGraph, visibleNodeIds]);
 
   async function refreshProjects() {
     try {
@@ -528,6 +561,8 @@ export function App() {
       setBaseline(loadBaseline(laidOut));
       setSourceFiles(inputFiles);
       setProjectMeta({ name, source });
+      setViewMode('function');
+      setFileGraphView(null);
       setSelected(null);
       setHiddenFiles(new Set());
       setFileFilter(null);
@@ -615,6 +650,8 @@ export function App() {
       setBaseline(loadBaseline(laidOut));
       setSourceFiles([]); // repo được lưu server-side, client không giữ file
       setProjectMeta({ name: t('label.git'), source: 'git' });
+      setViewMode('function');
+      setFileGraphView(null);
       setSelected(null);
       setHiddenFiles(new Set());
       setFileFilter(null);
@@ -652,16 +689,43 @@ export function App() {
   }
 
   function relayout(nextMode = layoutMode) {
-    if (!graph) return;
-    clearLayout(graph); // quên vị trí tuỳ chỉnh, xếp lại tự động
-    const next = cloneGraph(graph);
+    if (!activeGraph) return;
+    clearLayout(activeGraph); // quên vị trí tuỳ chỉnh, xếp lại tự động
+    const next = cloneGraph(activeGraph);
     next.nodes.forEach((node) => {
       node.x = undefined;
       node.y = undefined;
     });
     layoutGraph(next, nextMode);
-    setGraph(next);
+    setActiveGraph(next);
     requestAnimationFrame(() => fitGraph(next));
+  }
+
+  // Nạp đồ thị mức file (gọi /api/file-graph một lần, rồi cache). Chỉ khả dụng khi có sourceFiles JS/TS.
+  async function loadFileGraph() {
+    if (fileGraphView || sourceFiles.length === 0) return;
+    setBusy(true);
+    setStatus(t('status.fileGraphLoading'));
+    try {
+      const report = await postJson<FileGraph>('/api/file-graph', { files: sourceFiles });
+      const mapped = layoutGraph(cloneGraph(fileGraphToGraph(report)), layoutMode);
+      setFileGraphView(mapped);
+      setStatus(t('status.fileGraphResult', { files: report.summary.files, edges: report.summary.edges, cycles: report.summary.cycles }));
+      requestAnimationFrame(() => fitGraph(mapped));
+    } catch (error) {
+      setViewMode('function');
+      setStatus(errText(error, t, 'status.analyzeFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function switchView(mode: ViewMode) {
+    if (mode === viewMode) return;
+    setViewMode(mode);
+    setSelected(null);
+    if (mode === 'file') void loadFileGraph();
+    else requestAnimationFrame(() => fitGraph(graph));
   }
 
   function setMark() {
@@ -674,7 +738,7 @@ export function App() {
     setStatus(t('status.markSet', { at: base.at }));
   }
 
-  function fitGraph(target = graph) {
+  function fitGraph(target = activeGraph) {
     if (!target || !svgRef.current || target.nodes.length === 0) return;
     const rect = svgRef.current.getBoundingClientRect();
     const xs = target.nodes.map((node) => node.x ?? 0);
@@ -760,7 +824,7 @@ export function App() {
 
   function handlePointerMove(event: React.PointerEvent<SVGSVGElement>) {
     const drag = dragRef.current;
-    if (!drag || !graph) return;
+    if (!drag || !activeGraph) return;
     const dx = event.clientX - drag.x;
     const dy = event.clientY - drag.y;
     if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
@@ -768,7 +832,7 @@ export function App() {
     if (drag.kind === 'pan') {
       setView((prev) => ({ ...prev, x: prev.x + dx, y: prev.y + dy }));
     } else {
-      setGraph((current) => {
+      setActiveGraph((current) => {
         if (!current) return current;
         return {
           ...current,
@@ -789,7 +853,7 @@ export function App() {
     if (drag?.kind === 'node') {
       if (!drag.moved) selectNode(drag.id);
       else
-        setGraph((current) => {
+        setActiveGraph((current) => {
           if (current) persistLayout(current); // lưu vị trí mới nhất
           return current;
         });
@@ -815,7 +879,7 @@ export function App() {
     });
   }
 
-  if (!graph || !maps) {
+  if (!graph || !maps || !activeGraph) {
     return (
       <div className="boot">
         <LoadingMark message={status || t('status.loadingSample')} />
@@ -824,11 +888,11 @@ export function App() {
   }
 
   const selectedNode = selected ? maps.byId.get(selected) ?? null : null;
-  const hotNodes = [...graph.nodes].filter((node) => node.level !== 'ok').sort((a, b) => b.score - a.score);
+  const hotNodes = [...activeGraph.nodes].filter((node) => node.level !== 'ok').sort((a, b) => b.score - a.score);
   const graphSummary = {
-    hot: graph.nodes.filter((node) => node.level === 'hot').length,
-    warn: graph.nodes.filter((node) => node.level === 'warn').length,
-    cycle: graph.nodes.some((node) => node.inCycle)
+    hot: activeGraph.nodes.filter((node) => node.level === 'hot').length,
+    warn: activeGraph.nodes.filter((node) => node.level === 'warn').length,
+    cycle: activeGraph.nodes.some((node) => node.inCycle)
   };
 
   return (
@@ -867,6 +931,19 @@ export function App() {
             <option value="layered">{t('layout.layered')}</option>
             <option value="force">{t('layout.force')}</option>
           </select>
+          <div className="seg" role="group" title={t('view.title')}>
+            <button className={`btn ${viewMode === 'function' ? 'on' : ''}`} onClick={() => switchView('function')}>
+              {t('view.function')}
+            </button>
+            <button
+              className={`btn ${viewMode === 'file' ? 'on' : ''}`}
+              onClick={() => switchView('file')}
+              disabled={sourceFiles.length === 0}
+              title={sourceFiles.length === 0 ? t('view.file.unavailable') : t('view.file.title')}
+            >
+              <Boxes size={15} /> {t('view.file')}
+            </button>
+          </div>
           <button className={`btn ${groupByFile ? 'on' : ''}`} onClick={() => setGroupByFile((value) => !value)} title={t('btn.group.title')}>
             <Layers3 size={15} /> {t('btn.group')}
           </button>
@@ -912,7 +989,7 @@ export function App() {
           <div className="pane-title">{t('pane.files')}</div>
           <div className="file-list">
             {files.map((file) => {
-              const count = graph.nodes.filter((node) => node.file === file).length;
+              const count = activeGraph.nodes.filter((node) => node.file === file).length;
               const hidden = hiddenFiles.has(file);
               return (
                 <div className={`row ${fileFilter === file ? 'selected' : ''} ${hidden ? 'muted' : ''}`} key={file}>
@@ -1019,13 +1096,13 @@ export function App() {
 
         <aside className="pane right-pane">
           <Inspector
-            graph={graph}
+            graph={activeGraph}
             selectedNode={selectedNode}
             maps={maps}
             summary={graphSummary}
             baseline={baseline}
             tracing={tracing}
-            traceOrder={selectedNode ? traceOrder(graph, selectedNode.id, depth) : []}
+            traceOrder={selectedNode ? traceOrder(activeGraph, selectedNode.id, depth) : []}
             t={t}
           />
         </aside>

@@ -9,6 +9,28 @@ A local-first codebase doctor for JavaScript/TypeScript. **Available (1.0)**: a 
 
 Huccanta scans your code, builds a graph of calls between functions, and surfaces the parts that are hard to maintain — call cycles, overly complex functions, tangled dependencies — with hints on how to untangle them. Everything runs locally; there is no external server and your code never leaves your machine.
 
+## Why Huccanta (vs AI-codemap tools)?
+
+"AI codemap" tools (an LLM reads your code and generates diagrams/summaries) are great at *pretty visuals and description*, but have three built-in weaknesses: **they hallucinate** (the LLM guesses relationships, not 100% accurate), **they send code to the cloud** (a non-starter for many teams), and **they only describe — they don't act**. Huccanta takes the opposite stance:
+
+| | AI-codemap tools | **Huccanta** |
+|---|---|---|
+| Source of truth | LLM guesses (can hallucinate) | **Deterministic** static analysis (ts-morph / tree-sitter) |
+| Privacy | Usually sends code to the cloud | **100% local**, code never leaves your machine |
+| Verdicts | Generated prose | **Evidence + confidence**, never a blind guess |
+| Action | View only | **Simulate a delete/change → blast radius** before you touch it |
+| Role with AI | *Is* an LLM | **A tool AI agents call** (MCP) — it feeds ground truth to the AI |
+
+In short: AI-codemap answers *"what does my code look like"*; Huccanta answers ***"what breaks if I change it"*** — **without hallucinating, without leaving your machine.**
+
+**Differentiating (sellable) features:**
+
+- **Refactor Sandbox** *(shipped)* — simulate deleting a file/function → see exactly what breaks + metric deltas, before you commit. No AI-codemap tool lets you "try a refactor".
+- **Evidence-based safe-delete** *(shipped)* — clean up dead code safely (confidence ≤ 85%, never a reckless "dead" call).
+- **Local-first** — sellable to security-conscious / regulated teams that cannot send code to a cloud LLM.
+- **Guardrail for AI-written code** *(direction)* — an agent calls Huccanta over MCP to self-check its diff (phantom imports, missing routes, new cycles) — timely for Copilot/Cursor.
+- **CI gate** *(direction)* — block PRs that regress structure (new cycle, god-node).
+
 ## Overview
 
 Reading an unfamiliar codebase is slow because control flow is scattered across files. Huccanta turns it into a map: each function is a node, each call a directed edge. From that map it automatically flags:
@@ -96,6 +118,7 @@ Tools ([server/mcp.ts](server/mcp.ts)):
 | `analyze_code` | Scans a `path` (local folder) or inline `files`; returns an overview (functions, calls, hotspots, cycles) plus ranked hotspots. When launched with a folder (`npx huccanta-mcp <folder>`), the arguments can be omitted. |
 | `get_function` | Detail of one function by `id` (`file#name`): code, callers, callees, issues. |
 | `import_health` | **(Repo Doctor, JS/TS)** File-level import health report: possibly-unused files (with evidence + confidence), entry points, broken relative imports, stats. |
+| `file_graph` | **(Repo Doctor Phase 2, JS/TS)** File-level dependency graph: node = file, edge = real import; flags file dependency cycles, classifies entry/normal/orphan, stats. |
 | `simulate_change` | **(Refactor Sandbox)** Simulate deleting a file/function without touching the filesystem → blast radius (broken callers, newly-orphaned functions, affected tests) + metric deltas (cycles, hotspots, fan-out). |
 
 Configure it in an MCP client:
@@ -125,7 +148,7 @@ Plus a **missing-code detector**: unresolved imports; packages imported but not 
 **Roadmap (MVP — JS/TS first, for accuracy):**
 
 - ✅ **Phase 1 · Import Health Report** *(shipped — `import_health` tool + `POST /api/import-health`)* — entry / possibly-unused files (confidence + evidence); unresolved imports (assets ignored); stats. Based on ts-morph's real import/export resolution.
-- **Phase 2 · File-level graph** — switch **Function | File | Contract**, using real import/export (no name-based guessing).
+- ✅ **Phase 2 · File-level graph** *(shipped — `file_graph` tool + `POST /api/file-graph` + a **Function | File** toggle in the UI)* — node = file, edge = real import/export (ts-morph, no name-based guessing); flags **file dependency cycles** (circular imports) and classifies entry/normal/orphan. The **Contract** mode (route/OpenAPI/DB) is left for a later phase.
 - ✅ **Phase 3 · Simulate delete (Refactor Sandbox)** *(shipped — `simulate_change` tool + `POST /api/simulate`)* — drop nodes from a shadow graph, list broken callers + newly-orphaned functions + affected tests, recompute cycles/fan-in-out. *(Built before Phase 2 as the flagship differentiator.)*
 - **Phase 4 · Test/runtime overlay** — declare a command (e.g. `npm test`), then overlay the runtime trace onto the static graph.
 
