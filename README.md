@@ -1,7 +1,5 @@
 # Huccanta
 
-> **X-ray your codebase before you touch it.** — soi codebase trước khi bạn động vào.
-
 Bác sĩ codebase chạy local cho JavaScript/TypeScript. **Có sẵn (1.0)**: bản đồ hàm/lời gọi + điểm rối trong UI (đa ngôn ngữ); và — qua **MCP tool + HTTP API** — **Import Health Report** (file thừa/gãy, kèm bằng chứng) và **Refactor Sandbox** (giả lập xóa file/hàm → blast radius, không đụng file). Chạy 100% trên máy bạn. Đang tiến tới bản *repo doctor* đầy đủ — xem mục **Tầm nhìn: Repo Doctor** bên dưới.
 
 **Tiếng Việt** · **[English](README.en.md)**
