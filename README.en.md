@@ -2,7 +2,7 @@
 
 > **X-ray your codebase before you touch it.**
 
-A local-first codebase doctor for JavaScript/TypeScript. **Today**: a function/call map plus hotspot detection, multi-language, running entirely on your machine. **Heading toward** an evidence-first *repo doctor* — see the **Vision: Repo Doctor** section below.
+A local-first codebase doctor for JavaScript/TypeScript. **Available (1.0)**: a function/call map plus hotspot detection in the UI (multi-language); and — via **MCP tools + HTTP API** — an **Import Health Report** (unused/broken files, with evidence) and a **Refactor Sandbox** (simulate deleting a file/function → blast radius, without touching files). Runs entirely on your machine. Still heading toward the full *repo doctor* — see the **Vision: Repo Doctor** section below.
 
 **[Tiếng Việt](README.md)** · **English**
 
@@ -90,13 +90,14 @@ npx huccanta-mcp /path/to/your/project   # run as a standalone tool (stdio)
 npm run mcp                              # or run it inside this repo
 ```
 
-Two tools ([server/mcp.ts](server/mcp.ts)):
+Tools ([server/mcp.ts](server/mcp.ts)):
 
 | Tool | What it does |
 |---|---|
 | `analyze_code` | Scans a `path` (local folder) or inline `files`; returns an overview (functions, calls, hotspots, cycles) plus ranked hotspots. When launched with a folder (`npx huccanta-mcp <folder>`), the arguments can be omitted. |
 | `get_function` | Detail of one function by `id` (`file#name`): code, callers, callees, issues. |
-| `import_health` | **(Repo Doctor Phase 1, JS/TS)** File-level import health report: possibly-unused files (with evidence + confidence), entry points, broken relative imports, stats. |
+| `import_health` | **(Repo Doctor, JS/TS)** File-level import health report: possibly-unused files (with evidence + confidence), entry points, broken relative imports, stats. |
+| `simulate_change` | **(Refactor Sandbox)** Simulate deleting a file/function without touching the filesystem → blast radius (broken callers, newly-orphaned functions, affected tests) + metric deltas (cycles, hotspots, fan-out). |
 
 Configure it in an MCP client (e.g. Claude Code):
 
@@ -126,7 +127,7 @@ Plus a **missing-code detector**: unresolved imports; packages imported but not 
 
 - ✅ **Phase 1 · Import Health Report** *(shipped — `import_health` tool + `POST /api/import-health`)* — entry / possibly-unused files (confidence + evidence); unresolved imports (assets ignored); stats. Based on ts-morph's real import/export resolution.
 - **Phase 2 · File-level graph** — switch **Function | File | Contract**, using real import/export (no name-based guessing).
-- **Phase 3 · Simulate delete** — drop nodes from a graph copy, list broken deps, recompute cycles/fan-in-out/complexity.
+- ✅ **Phase 3 · Simulate delete (Refactor Sandbox)** *(shipped — `simulate_change` tool + `POST /api/simulate`)* — drop nodes from a shadow graph, list broken callers + newly-orphaned functions + affected tests, recompute cycles/fan-in-out. *(Built before Phase 2 as the flagship differentiator.)*
 - **Phase 4 · Test/runtime overlay** — declare a command (e.g. `npm test`), then overlay the runtime trace onto the static graph.
 
 **Non-goals:** no race to 30 languages · no Neo4j platform · no generic AI chatbot · no mysterious "health score" without evidence · no "dead because fan-in is 0" · no prettier-3D-graph race.

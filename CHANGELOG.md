@@ -2,20 +2,20 @@
 
 Các thay đổi đáng chú ý của Huccanta được ghi ở đây. Theo [Keep a Changelog](https://keepachangelog.com/) và [SemVer](https://semver.org/).
 
-## [Chưa phát hành]
+## [1.0.0] — 2026-07-12
+
+Tái định vị thành **Repo Doctor evidence-first** — *"X-ray your codebase before you touch it."* Trọng tâm chuyển từ "trực quan hoá code" sang "ra quyết định sửa/xóa an toàn, có bằng chứng".
 
 ### Đã thêm
 
-- **GĐ 1 · Import Health Report** (chỉ JS/TS) — báo cáo sức khoẻ import ở mức file dựa trên import/export thật (ts-morph, in-memory FS): file entry / có thể thừa (kèm bằng chứng + độ tin cậy ≤ 85%), import tương đối gãy (bỏ qua asset css/json/svg…), và thống kê. Bắt cả **dynamic `import()`, `require()`, shebang** (giảm false positive) và **parse-error thật** (syntactic). Expose qua tool MCP `import_health` và `POST /api/import-health`.
+- **Import Health Report** (Repo Doctor GĐ 1, chỉ JS/TS) — báo cáo sức khoẻ import mức file dựa trên import/export thật (ts-morph, in-memory FS): file entry / có thể thừa (kèm bằng chứng + độ tin cậy ≤ 85%), import tương đối gãy (bỏ qua asset), thống kê. Bắt cả **dynamic `import()`, `require()`, shebang** và **parse-error thật** (syntactic). Qua tool MCP `import_health` + `POST /api/import-health`.
+- **Refactor Sandbox** (Repo Doctor GĐ 3) — tool `simulate_change` + `POST /api/simulate`: giả lập **xóa file/hàm** trên đồ thị bóng mà không đụng filesystem → **blast radius** (nơi gọi gãy, hàm mồ côi, test liên quan) + **delta metric** (vòng gọi, điểm rối, fan-out trước→sau).
 
-### Định hướng — Repo Doctor
+### Lộ trình còn lại
 
-Chuyển trọng tâm từ "trực quan hoá code" sang **bác sĩ codebase evidence-first** ("X-ray your codebase before you touch it"): kết luận kèm bằng chứng + độ tin cậy, giả lập xóa/sửa trước khi động vào (Refactor Sandbox), đối chiếu static × runtime, và missing-code detector. Xem mục *Tầm nhìn* trong [README](README.md). MVP bắt đầu với JS/TS:
-
-- **GĐ 1** — Import Health Report (file tìm thấy/bỏ qua/parse lỗi, unresolved import, entry point, orphan, confidence + bằng chứng).
-- **GĐ 2** — Đồ thị mức file (Function | File | Contract).
-- **GĐ 3** — Giả lập xóa (blast radius trên đồ thị bóng).
-- **GĐ 4** — Phủ test/runtime lên static graph.
+- **GĐ 2** — Đồ thị mức file (Function | File | Contract) trong UI.
+- **GĐ 4** — Phủ static × runtime (chạy test rồi tô luồng thực sự chạy).
+- Định hướng khác biệt: cross-stack contract/missing-code, AI-codegen guardrail, bus-factor map — xem *Tầm nhìn* trong [README](README.md).
 
 ## [0.3.0] — 2026-07-11
 
@@ -58,4 +58,5 @@ Bản công khai đầu tiên trên GitHub. / First public release.
 - Với nhóm tree-sitter, lời gọi khớp theo tên và độ phức tạp là heuristic — kém chính xác hơn JS/TS.
 - File `.h` được phân tích bằng grammar C nên có thể bỏ sót cấu trúc C++.
 
+[1.0.0]: https://github.com/hieuchaydi/huccanta/releases/tag/v1.0.0
 [0.3.0]: https://github.com/hieuchaydi/huccanta/releases/tag/v0.3.0

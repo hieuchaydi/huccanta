@@ -72,3 +72,34 @@ export interface ImportHealthReport {
   };
   files: FileHealth[];
 }
+
+// ---- Refactor Sandbox: giả lập một thay đổi trên "đồ thị bóng", không đụng filesystem ----
+export type ChangeKind = 'delete-file' | 'delete-function';
+
+export interface SimChange {
+  kind: ChangeKind;
+  target: string; // đường dẫn file (delete-file) hoặc id hàm "file#name" (delete-function)
+}
+
+export interface AffectedCaller {
+  id: string;
+  file: string;
+  removedCallees: string[]; // các hàm bị xoá mà nơi này đang gọi (lời gọi sẽ gãy)
+  fanOutBefore: number;
+  fanOutAfter: number;
+}
+
+export interface SimulationResult {
+  change: SimChange;
+  found: boolean; // target có tồn tại không
+  removed: { functions: number; files: string[] };
+  brokenCallers: AffectedCaller[]; // nơi gọi tới hàm bị xoá → lời gọi gãy
+  newlyOrphaned: { id: string; file: string }[]; // hàm mất hết nơi gọi sau thay đổi
+  affectedTests: string[]; // file test có liên quan
+  metrics: {
+    functions: { before: number; after: number };
+    functionsInCycle: { before: number; after: number };
+    hotspots: { before: number; after: number };
+  };
+  summary: string[]; // tóm tắt dễ đọc (blast radius + delta)
+}

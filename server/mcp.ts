@@ -11,6 +11,7 @@ import { z } from 'zod';
 import type { Graph, SourceFileInput } from '../src/types';
 import { analyzeProject } from './analyze';
 import { importHealthReport } from './importHealth';
+import { simulateChange } from './simulate';
 import { collectSourceFiles } from './scan';
 
 // Cho phép "npx huccanta-mcp <folder>": nếu truyền thư mục, các tool có thể bỏ trống
@@ -146,6 +147,25 @@ server.registerTool(
   },
   async ({ path, files }) => {
     return json(importHealthReport(await loadFiles({ path, files })));
+  }
+);
+
+server.registerTool(
+  'simulate_change',
+  {
+    title: 'Refactor Sandbox — giả lập thay đổi',
+    description:
+      'Giả lập XOÁ một file (`kind: "delete-file"`, `target` = đường dẫn) hoặc một hàm (`kind: "delete-function"`, ' +
+      '`target` = id "file#name") mà KHÔNG đụng filesystem. Trả blast radius (nơi gọi tới sẽ gãy, hàm thành mồ côi, ' +
+      'file test liên quan) và delta metric (vòng gọi, điểm rối trước→sau). Nhận "path"/"files" như analyze_code.',
+    inputSchema: {
+      ...sourceShape,
+      kind: z.enum(['delete-file', 'delete-function']).describe('Loại thay đổi giả lập.'),
+      target: z.string().describe('Đường dẫn file (delete-file) hoặc id hàm "file#name" (delete-function).')
+    }
+  },
+  async ({ path, files, kind, target }) => {
+    return json(await simulateChange(await loadFiles({ path, files }), { kind, target }));
   }
 );
 

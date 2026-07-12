@@ -60,8 +60,9 @@ UI (React/Vite, SVG) ──/api (proxy dev, cùng cổng ở prod)──▶ Anal
 | [server/index.ts](server/index.ts) | Express routes + phục vụ dist ở prod. |
 | [server/db.ts](server/db.ts) | SQLite: `listProjects`/`getProject`/`saveProject`/`deleteProject`. |
 | [server/scan.ts](server/scan.ts) | Duyệt thư mục/repo, lọc file nguồn, bỏ dir rác. |
-| [server/importHealth.ts](server/importHealth.ts) | **GĐ 1 Repo Doctor** — `importHealthReport(files)`: sức khoẻ import mức file (JS/TS, ts-morph in-memory FS). |
-| [server/mcp.ts](server/mcp.ts) | MCP server (stdio); tool `analyze_code`/`get_function` (đa ngôn ngữ) + `import_health` (GĐ 1). |
+| [server/importHealth.ts](server/importHealth.ts) | **Repo Doctor GĐ 1** — `importHealthReport(files)`: sức khoẻ import mức file (JS/TS, ts-morph in-memory FS). |
+| [server/simulate.ts](server/simulate.ts) | **Refactor Sandbox (GĐ 3)** — `simulateChange(files, change)`: giả lập xóa file/hàm trên đồ thị bóng → blast radius + delta metric. |
+| [server/mcp.ts](server/mcp.ts) | MCP server (stdio); tool `analyze_code`/`get_function` (đa ngôn ngữ) + `import_health` + `simulate_change`. |
 | [bin/huccanta-mcp.mjs](bin/huccanta-mcp.mjs) | Bin cho packet: `npx huccanta-mcp <folder>`. |
 | [tests/analyzer.test.ts](tests/analyzer.test.ts), [tests/multilang.test.ts](tests/multilang.test.ts) | Unit test JS/TS + đa ngôn ngữ (`analyzeProject`). |
 

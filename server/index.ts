@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { analyzeProject } from './analyze';
 import { importHealthReport } from './importHealth';
-import type { SourceFileInput } from '../src/types';
+import { simulateChange } from './simulate';
+import type { ChangeKind, SourceFileInput } from '../src/types';
 import { collectSourceFiles } from './scan';
 import { deleteProject, getProject, listProjects, saveProject, type ProjectMeta } from './db';
 
@@ -44,6 +45,25 @@ app.post('/api/import-health', (req, res) => {
   }
   try {
     res.json(importHealthReport(files));
+  } catch (error) {
+    res.status(500).json({ code: 'analyzeFailed', error: error instanceof Error ? error.message : 'Phân tích thất bại.' });
+  }
+});
+
+app.post('/api/simulate', async (req, res) => {
+  const files = req.body?.files as SourceFileInput[] | undefined;
+  const kind = req.body?.kind as ChangeKind | undefined;
+  const target = typeof req.body?.target === 'string' ? (req.body.target as string) : '';
+  if (!Array.isArray(files) || files.length === 0) {
+    res.status(400).json({ code: 'missingFiles', error: 'Thiếu danh sách files để phân tích.' });
+    return;
+  }
+  if ((kind !== 'delete-file' && kind !== 'delete-function') || !target) {
+    res.status(400).json({ code: 'invalidChange', error: 'Cần "kind" (delete-file|delete-function) và "target".' });
+    return;
+  }
+  try {
+    res.json(await simulateChange(files, { kind, target }));
   } catch (error) {
     res.status(500).json({ code: 'analyzeFailed', error: error instanceof Error ? error.message : 'Phân tích thất bại.' });
   }
