@@ -80,7 +80,7 @@ A key design choice: **the server never returns translated strings.** Hotspots a
 
 ## MCP server
 
-Huccanta exposes its analyzer over the **Model Context Protocol** so AI agents (Claude Code, Cursor…) can call it directly in natural language, reusing the exact same multi-language analyzer as the app.
+Huccanta exposes its analyzer over the **Model Context Protocol** so AI agents (Cursor, Windsurf…) can call it directly in natural language, reusing the exact same multi-language analyzer as the app.
 
 The MCP server ships as a **packet usable from any project** — just point it at the folder to analyze:
 
@@ -98,7 +98,7 @@ Tools ([server/mcp.ts](server/mcp.ts)):
 | `import_health` | **(Repo Doctor, JS/TS)** File-level import health report: possibly-unused files (with evidence + confidence), entry points, broken relative imports, stats. |
 | `simulate_change` | **(Refactor Sandbox)** Simulate deleting a file/function without touching the filesystem → blast radius (broken callers, newly-orphaned functions, affected tests) + metric deltas (cycles, hotspots, fan-out). |
 
-Configure it in an MCP client (e.g. Claude Code):
+Configure it in an MCP client:
 
 ```json
 {
@@ -157,4 +157,4 @@ tests/
 
 React 18 · TypeScript · Vite 6 · Express · ts-morph · tree-sitter (WASM) · SQLite (`node:sqlite`) · MCP SDK · Vitest.
 
-For architecture, algorithms and development conventions, see [CLAUDE.md](CLAUDE.md). For the contribution & release workflow, see [CONTRIBUTING.md](CONTRIBUTING.md).
+For architecture, algorithms and development conventions, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). For the contribution & release workflow, see [CONTRIBUTING.md](CONTRIBUTING.md).

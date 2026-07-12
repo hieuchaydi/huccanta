@@ -1,4 +1,4 @@
-// MCP server cho Huccanta — expose analyzer thành công cụ cho AI agent (Claude Code, v.v.)
+// MCP server cho Huccanta — expose analyzer thành công cụ cho AI agent (Cursor, Windsurf, v.v.)
 // qua stdio. Tái dùng chính lõi phân tích của app (analyzeProject) và bộ quét thư mục (scan).
 //
 // Chạy: npm run mcp   (hoặc: npx tsx server/mcp.ts)

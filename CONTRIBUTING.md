@@ -1,6 +1,6 @@
 # Đóng góp & phát hành
 
-Hướng dẫn phát triển, kiểm tra và ra bản mới cho Huccanta. Xem [CLAUDE.md](CLAUDE.md) cho kiến trúc và quy ước code chi tiết.
+Hướng dẫn phát triển, kiểm tra và ra bản mới cho Huccanta. Xem [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) cho kiến trúc và quy ước code chi tiết.
 
 ## Chuẩn bị
 
@@ -43,22 +43,21 @@ Theo [SemVer](https://semver.org/): `MAJOR.MINOR.PATCH` — sửa lỗi → PATC
 
 1. Cập nhật code, `npm run build && npm test` xanh.
 2. Bump `version` trong `package.json` (và chạy `npm install` để đồng bộ `package-lock.json`).
-3. Thêm mục mới vào [CHANGELOG.md](CHANGELOG.md) (`## [x.y.z] — YYYY-MM-DD`).
-4. Commit: `git commit -m "release: vX.Y.Z — <tóm tắt>"`.
-5. Gắn tag & push:
+3. Commit: `git commit -m "release: vX.Y.Z — <tóm tắt>"`.
+4. Gắn tag & push:
 
    ```bash
    git tag -a vX.Y.Z -m "Huccanta vX.Y.Z"
    git push origin main --follow-tags
    ```
 
-6. Tạo GitHub Release từ tag (lấy nội dung từ CHANGELOG):
+5. Tạo GitHub Release từ tag:
 
    ```bash
-   gh release create vX.Y.Z --title "Huccanta vX.Y.Z" --notes-file CHANGELOG.md --latest
+   gh release create vX.Y.Z --title "Huccanta vX.Y.Z" --generate-notes --latest
    ```
 
-   (Hoặc mở `https://github.com/hieuchaydi/huccanta/releases/new?tag=vX.Y.Z` rồi dán nội dung.)
+   (Hoặc mở `https://github.com/hieuchaydi/huccanta/releases/new?tag=vX.Y.Z`.)
 
 ## Quy ước commit
 

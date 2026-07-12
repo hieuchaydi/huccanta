@@ -1,6 +1,6 @@
-# CLAUDE.md
+# Kiến trúc & quy ước phát triển
 
-Ghi chú cho AI/agent làm việc trong repo này. Đọc kỹ trước khi sửa — nhiều quy ước ở đây **không suy ra được từ code** và dễ vấp.
+Ghi chú cho người phát triển làm việc trong repo này. Đọc kỹ trước khi sửa — nhiều quy ước ở đây **không suy ra được từ code** và dễ vấp.
 
 ## Huccanta là gì
 
@@ -16,7 +16,7 @@ npm run dev       # dev: server API (3030, tsx watch) + Vite UI (5173) chạy so
 npm run build     # tsc -b (type-check) && vite build → dist/
 npm run start     # chạy server; nếu có dist/ thì phục vụ luôn UI trên MỘT cổng (3030)
 npm run serve     # = build && start
-npm run mcp       # chạy MCP server (stdio) expose analyzer cho AI agent
+npm run mcp       # chạy MCP server (stdio) expose analyzer qua Model Context Protocol
 npx huccanta-mcp <folder>   # chạy MCP server như packet từ project bất kỳ (bin)
 npm run preview   # vite preview dist/ (KHÔNG có /api → tính năng phân tích không chạy)
 npm test          # vitest run (tests/analyzer.test.ts)

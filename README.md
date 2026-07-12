@@ -79,7 +79,7 @@ Một điểm thiết kế quan trọng: **server không trả chuỗi đã dị
 
 ## MCP server
 
-Huccanta expose lõi phân tích qua **Model Context Protocol** để AI agent (Claude Code, Cursor…) gọi trực tiếp bằng ngôn ngữ tự nhiên, tái dùng đúng analyzer đa ngôn ngữ của app.
+Huccanta expose lõi phân tích qua **Model Context Protocol** để AI agent (Cursor, Windsurf…) gọi trực tiếp bằng ngôn ngữ tự nhiên, tái dùng đúng analyzer đa ngôn ngữ của app.
 
 MCP server đóng gói dạng **packet dùng được từ project bất kỳ** — trỏ vào thư mục cần phân tích:
 
@@ -97,7 +97,7 @@ Các công cụ ([server/mcp.ts](server/mcp.ts)):
 | `import_health` | **(Repo Doctor, JS/TS)** Báo cáo sức khoẻ import mức file: file có thể thừa (kèm bằng chứng + độ tin cậy), entry point, import tương đối gãy, thống kê. |
 | `simulate_change` | **(Refactor Sandbox)** Giả lập xóa file/hàm mà không đụng filesystem → blast radius (nơi gọi gãy, hàm mồ côi, test liên quan) + delta metric (vòng gọi, điểm rối, fan-out). |
 
-Cấu hình cho một MCP client (ví dụ Claude Code):
+Cấu hình cho một MCP client:
 
 ```json
 {
@@ -156,4 +156,4 @@ tests/
 
 React 18 · TypeScript · Vite 6 · Express · ts-morph · tree-sitter (WASM) · SQLite (`node:sqlite`) · MCP SDK · Vitest.
 
-Chi tiết kiến trúc, thuật toán và quy ước phát triển: xem [CLAUDE.md](CLAUDE.md). Quy trình đóng góp & phát hành: xem [CONTRIBUTING.md](CONTRIBUTING.md).
+Chi tiết kiến trúc, thuật toán và quy ước phát triển: xem [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Quy trình đóng góp & phát hành: xem [CONTRIBUTING.md](CONTRIBUTING.md).
