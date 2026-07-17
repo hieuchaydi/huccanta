@@ -1,6 +1,6 @@
 // Điểm vào phân tích đa ngôn ngữ. Chia file theo ngôn ngữ:
 //   - JS/TS  → ts-morph (parseSources, chính xác nhờ resolve symbol)
-//   - còn lại → tree-sitter (parseTreeSitter, heuristic theo tên)
+//   - còn lại → tree-sitter (parseTreeSitter, resolver AST bảo thủ theo owner/scope)
 // rồi gộp thành một đồ thị và chấm điểm chung bằng analyzeGraph.
 import { createHash } from 'node:crypto';
 import { analyzeGraph, parseSources } from '../src/analyzer';

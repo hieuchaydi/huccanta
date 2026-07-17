@@ -83,6 +83,11 @@ UI (React/Vite, SVG) ──/api (proxy dev, cùng cổng ở prod)──▶ Anal
 
 `parseSources`: ts-morph bắt `function decl` (mọi độ sâu), arrow/function expression gán biến, method class (`Class.method`). Resolve đích lời gọi **qua symbol** trước, fallback theo tên trong cùng file. Không tính lời gọi nằm trong hàm con (hàm con là node riêng).
 
+`parseTreeSitter`: mỗi grammar khai báo query định nghĩa/call và branch node type riêng. Resolver dựng
+owner/class, receiver và qualified symbol; chỉ phát cạnh khi là `exact` hoặc `same-file`.
+Call xuyên file chỉ có tên trần và symbol trùng tên nhưng không đủ owner/receiver evidence sẽ không phát cạnh. `GraphEdge.resolution`
+cho phép UI/benchmark phân biệt mức bằng chứng thay vì coi mọi cạnh là như nhau.
+
 `analyzeGraph` (ngưỡng cố định — chỉnh ở đây nếu cần):
 - `complexity` = 1 + mỗi `if/for/for-in/for-of/while/do/case/catch/?:` + mỗi `&&`/`||`.
 - Vòng gọi: **Tarjan SCC** (component > 1 hoặc self-loop) → `inCycle=true`, cạnh trong SCC → `edge.cycle=true`.
@@ -101,12 +106,15 @@ UI (React/Vite, SVG) ──/api (proxy dev, cùng cổng ở prod)──▶ Anal
 7. **`preview` không có API** — muốn thử bản build đầy đủ thì `npm run start`.
 8. **MCP server ([server/mcp.ts](server/mcp.ts))** dùng stdio → **KHÔNG `console.log` ra stdout** (làm hỏng giao thức JSON-RPC); log thì dùng `console.error` (stderr). Tool tái dùng `analyzeProject` + `collectSourceFiles`, nhận `path` (thư mục) hoặc `files`. Thêm tool mới bằng `server.registerTool(name, { title, description, inputSchema }, handler)` với `inputSchema` là zod raw shape.
 9. **`web-tree-sitter` GHIM ở `0.22.6`** — grammar trong `tree-sitter-wasms@0.1.13` build bằng tree-sitter 0.20, KHÔNG nạp được trên web-tree-sitter ≥0.25 (lỗi `getDylinkMetadata`). Nâng web-tree-sitter phải nâng luôn nguồn grammar cho khớp ABI. API 0.22: `import Parser`, `Parser.init()`, `Parser.Language.load(path)`, `language.query(src)`.
-10. **Tree-sitter khớp lời gọi theo TÊN TRẦN** (không resolve symbol). Method có tiền tố lớp (`Class.m`) cho `node.name`, nhưng index resolve theo tên trần vì call site cũng là tên trần. Tên trùng nhiều nơi mà không cùng file → bỏ cạnh (tránh sai). Độ phức tạp cho nhóm tree-sitter là **heuristic** (đếm node type khớp `BRANCH_RE`), kém chính xác hơn JS/TS.
+10. **Tree-sitter không có compiler type checker**, nên Huccanta dùng resolver tĩnh bảo thủ thay vì
+đoán theo tên trần: qualified owner/receiver → symbol duy nhất cùng file; call tên trần xuyên file và
+trường hợp mơ hồ đều bỏ cạnh. Complexity dùng `branchTypes` khai báo theo từng grammar, không
+dùng regex node type chung. Đây là giới hạn evidence có chủ đích, không phải runtime proof.
 
 ### Thêm một ngôn ngữ (tree-sitter)
 
 1. Kiểm tra `node_modules/tree-sitter-wasms/out/tree-sitter-<lang>.wasm` có sẵn.
-2. Thêm một mục vào mảng `CONFIGS` trong [server/treesitter.ts](server/treesitter.ts): `grammar`, `extensions`, `defTypes` (node type định nghĩa hàm), `nameQuery` (bắt `@def` + `@name`), `callQuery` (bắt `@c` = tên hàm gọi), `classTypes` (bao ngoài để tạo tiền tố).
+2. Thêm một mục vào mảng `CONFIGS` trong [server/treesitter.ts](server/treesitter.ts): `grammar`, `extensions`, `defTypes` (node type định nghĩa hàm), `nameQuery` (bắt `@def` + `@name`), `callQuery` (bắt `@call` + `@c`), `classTypes` (bao ngoài để tạo tiền tố), `branchTypes` (node tính complexity).
 3. Thêm đuôi file vào `SOURCE_EXT` trong [server/scan.ts](server/scan.ts) và `JS_TS` regex KHÔNG được chứa nó.
 4. Viết query đúng field name của grammar — spike nhanh: `node -e` load wasm rồi `language.query(...)` (xem git history của các query hiện có làm mẫu). Thêm case vào [tests/multilang.test.ts](tests/multilang.test.ts).
 

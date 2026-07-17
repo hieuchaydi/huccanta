@@ -30,7 +30,74 @@ Nói ngắn: AI-codemap trả lời *"code của bạn trông thế nào"*; Hucc
 - **Safe-delete có bằng chứng** *(đã có)* — dọn dead-code an toàn (độ tin cậy ≤ 85%, không phán "dead" liều).
 - **Local-first** — hợp đội bảo mật / lĩnh vực bị quản: không được gửi code lên LLM cloud thì Huccanta là lựa chọn.
 - **Guardrail cho code AI viết** *(đã có lõi)* — agent gọi `contract_radar` + `verify_change` qua MCP để tự kiểm route gọi hụt, import ảo và cycle mới.
-- **CI gate** *(hướng tới)* — chặn PR làm hồi quy cấu trúc (thêm cycle, god-node).
+- **CI gate** *(đã có)* — chặn PR làm hồi quy contract/cấu trúc theo exit code.
+
+## So sánh với các project cùng vùng bài toán
+
+Huccanta không cạnh tranh bằng cách tuyên bố “graph lớn hơn”. Nó chọn một điểm giao khác: **graph
+để hiểu context, contract để quyết định patch có được nhận hay không**. Bảng dưới đây so sánh theo
+chức năng công khai của từng project; số star chỉ là ảnh chụp tham khảo vì thay đổi theo thời gian.
+
+| Project | GitHub stars¹ | Trọng tâm | Điểm mạnh hơn Huccanta | Khoảng Huccanta chủ động khác |
+|---|---:|---|---|---|
+| [CodeGraph](https://github.com/colbymchenry/codegraph) | ≈60.6k | Semantic context cho coding agent | Persistent graph, file watcher, auto-sync, nhiều ngôn ngữ/agent, impact và context retrieval; repo tự báo cáo benchmark giảm 58% tool calls | Huccanta phát hành **Change Contract** `PASS/FAIL/UNKNOWN` + fingerprint và kiểm HTTP schema/auth/status, không chỉ trả context |
+| [Nx](https://github.com/nrwl/nx) | ≈29.1k | Monorepo build/CI orchestration | Cache, affected task, plugin và distributed CI | Huccanta kiểm **evidence của thay đổi**, không chạy build thay Nx |
+| [Semgrep](https://github.com/semgrep/semgrep) | ≈15.9k | Pattern/SAST/SCA/secrets | Rule ecosystem, security scanning và nhiều ngôn ngữ | Huccanta nối client HTTP ↔ backend route và kiểm ý định patch; không thay security scanner |
+| [CodeQL](https://github.com/github/codeql) | ≈9.8k | Semantic query/security analysis | Data-flow/query engine và security coverage sâu | Huccanta dễ đọc hơn cho agent/reviewer ở contract drift, nhưng chưa có query engine tương đương |
+| [Sourcegraph](https://github.com/sourcegraph/sourcegraph-public-snapshot) | ≈10.3k | Code search/intelligence ở quy mô nhiều repo | Index/search/reference/refactor lớn, cloud/self-hosted workflow | Huccanta local snapshot-first, hướng vào guardrail của một thay đổi cụ thể |
+
+¹ Ảnh chụp ngày 2026-07-18; star chỉ biểu thị quy mô cộng đồng, không phải thước đo chất lượng hay
+độ chính xác.
+
+### Vì sao Huccanta biết hai phía khác nhau?
+
+Đây là phần cần phân biệt với AI-codemap hoặc một graph chỉ dựa trên tên:
+
+1. **Nguồn sự thật là AST, không phải LLM đoán.** `ts-morph` resolve symbol JS/TS; tree-sitter
+   giữ node type, owner/class, receiver và vị trí source cho các ngôn ngữ còn lại.
+2. **Mọi quan hệ có rule nối cụ thể.** Ví dụ `fetch('/api/users')` chỉ match route cùng method và
+   path pattern; `this.helper()` được nối vào `Class.helper`, không chọn một method `helper` ngẫu
+   nhiên ở class khác.
+3. **Trường hợp không chứng minh được thì không nối.** Symbol trùng tên nhưng mơ hồ bị bỏ cạnh và
+   được coi là thiếu bằng chứng; output không biến phỏng đoán thành “đúng”.
+4. **Contract được kiểm ở boundary, không chỉ trong graph.** Radar so request/response fields,
+   Authorization, status và HTTP test observation; vì vậy client/server có thể lệch dù không có
+   import trực tiếp.
+5. **Thay đổi có policy và fingerprint.** `verify_change` so snapshot trước/sau theo allow-list và
+   budget; `UNKNOWN` fail-closed, còn fingerprint SHA-256 ràng buộc certificate với đúng input.
+
+Chi tiết implementation: [server/contractRadar.ts](server/contractRadar.ts),
+[server/changeContract.ts](server/changeContract.ts), [server/treesitter.ts](server/treesitter.ts).
+
+## Benchmark có thể tái chạy
+
+Chạy:
+
+```bash
+npm run benchmark
+```
+
+Benchmark dùng fixture cố định gồm 6 ngôn ngữ (Python, Java, Go, C, C++, C#), 10 vòng đo sau 1
+warm-up; báo median và p95, không đo cache warm của `analyzeProject`. Nó còn assert ground-truth cho
+7 cạnh có nhãn evidence và 4 call thiếu bằng chứng phải bị bỏ. Đây là benchmark cục bộ cho tốc độ và
+tính đúng của resolver Huccanta, **không phải** phép so sánh apples-to-apples với CodeGraph. CodeGraph tự công bố
+benchmark agent-level trên 7 repo, trong đó context graph giúp giảm tool calls; cần giữ hai loại đo
+này tách biệt vì một bên đo parser, một bên đo hiệu quả agent. [Xem phương pháp CodeGraph](https://github.com/colbymchenry/codegraph#benchmark-results).
+
+Kết quả mẫu dưới đây chạy trên Windows 11 (Node v24.11.1), 10 vòng đo ngày 2026-07-18; máy khác
+sẽ dao động:
+
+| Tác vụ | Fixture | Median | P95 |
+|---|---:|---:|---:|
+| `parseTreeSitter` | 6 ngôn ngữ / 6 file | 2.18 ms | 4.16 ms |
+| `analyzeProject` | 6 ngôn ngữ / 6 file | 2.68 ms | 3.12 ms |
+| `contractRadarReport` | 1 client / 1 route | 115.16 ms | 188.26 ms |
+
+Ground-truth hiện tại **PASS**: 7/7 cạnh mong đợi, 0 cạnh ngoài nhãn, đúng breakdown
+`same-file: 2` / `exact: 5`; 4/4 call mơ hồ, xuyên file chỉ có tên trần hoặc receiver ngoài chưa
+resolve bị bỏ. Đây là regression fixture nhỏ, không phải claim accuracy 100% cho code thực. Muốn
+mở rộng coverage phải thêm nhãn
+`exact`, `same-file` hoặc `ambiguous/unresolved` theo từng ngôn ngữ.
 
 ## Giới thiệu
 
@@ -44,7 +111,7 @@ Click vào một node để xem code thật, danh sách hàm gọi đến / bị
 
 Nguồn code có thể là: dán trực tiếp, chọn một thư mục local, hoặc dán URL repo Git để clone và quét. Project đã quét có thể lưu lại để mở nhanh lần sau.
 
-**Ngôn ngữ hỗ trợ:** JavaScript/TypeScript (qua ts-morph, resolve symbol chính xác) và **Python, Java, Go, C/C++, C#** (qua tree-sitter). Với nhóm tree-sitter, lời gọi được khớp theo tên hàm (heuristic) nên kém chính xác hơn JS/TS.
+**Ngôn ngữ hỗ trợ:** JavaScript/TypeScript (qua ts-morph, resolve symbol chính xác) và **Python, Java, Go, C/C++, C#** (qua tree-sitter). Nhóm tree-sitter dùng resolver tĩnh bảo thủ: qualified owner/receiver hoặc symbol cùng-file duy nhất; call xuyên file chỉ có tên trần và call mơ hồ đều bị bỏ cạnh thay vì đoán.
 
 ## Yêu cầu
 
@@ -161,7 +228,7 @@ Mục tiêu dài hạn: không chỉ *vẽ* code mà giúp *ra quyết định s
 
 Kèm **Missing-code detector**: import không resolve; package import nhưng chưa khai báo; frontend gọi API không có route (và route không ai dùng); env đọc nhưng thiếu trong `.env.example`; config trỏ file không tồn tại; interface thiếu method; route không có test. Với dự án đa ngôn ngữ, nối qua **hợp đồng thực tế** thay vì đoán: `fetch("/api/users")` → route/OpenAPI → `get_users()` → bảng `users`.
 
-**Lộ trình (MVP — chỉ JS/TS trước cho chính xác):**
+**Lộ trình (MVP — JS/TS là vùng chính xác nhất, polyglot dùng resolver bảo thủ):**
 
 - ✅ **GĐ 1 · Import Health Report** *(đã có — tool `import_health` + `POST /api/import-health`)* — file entry / có thể thừa (confidence + bằng chứng); unresolved import (bỏ qua asset); thống kê. Dựa trên import/export thật của ts-morph.
 - ✅ **GĐ 2 · Đồ thị mức file** *(đã có — tool `file_graph` + `POST /api/file-graph` + toggle **Hàm | File** trên UI)* — node = file, cạnh = import/export THẬT (ts-morph, không đoán theo tên hàm); bắt **vòng phụ thuộc file** (circular import), phân loại entry/normal/orphan. Chế độ **Contract** (route/OpenAPI/DB) để lại cho GĐ sau.

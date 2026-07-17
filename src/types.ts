@@ -1,5 +1,6 @@
 export type NodeLevel = 'ok' | 'warn' | 'hot';
 export type EdgeKind = 'call' | 'async' | 'recursive';
+export type EdgeResolution = 'exact' | 'same-file';
 export type FixKind = 'tangle' | 'warn' | 'accent';
 export type IssueCode = 'cycle' | 'complexity' | 'fanOut' | 'fanIn';
 
@@ -34,6 +35,8 @@ export interface GraphEdge {
   cycle: boolean;
   kind?: EdgeKind;
   count?: number;
+  /** Cách resolver tĩnh xác định đích; không phải runtime proof. */
+  resolution?: EdgeResolution;
 }
 
 export interface Graph {

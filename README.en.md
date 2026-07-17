@@ -30,7 +30,35 @@ In short: AI-codemap answers *"what does my code look like"*; Huccanta answers *
 - **Evidence-based safe-delete** *(shipped)* — clean up dead code safely (confidence ≤ 85%, never a reckless "dead" call).
 - **Local-first** — sellable to security-conscious / regulated teams that cannot send code to a cloud LLM.
 - **Guardrail for AI-written code** *(core shipped)* — agents call `contract_radar` + `verify_change` over MCP to self-check phantom routes/imports and new cycles.
-- **CI gate** *(direction)* — block PRs that regress structure (new cycle, god-node).
+- **CI gate** *(shipped)* — block PRs that regress contracts/structure with a real exit code.
+
+## Comparison with adjacent projects
+
+Huccanta is not trying to have the biggest graph. Its distinction is: **the graph explains context;
+the contract decides whether a patch is acceptable**.
+
+| Project | GitHub stars¹ | Primary focus | Stronger than Huccanta at | Huccanta's deliberate difference |
+|---|---:|---|---|---|
+| [CodeGraph](https://github.com/colbymchenry/codegraph) | ≈60.6k | Semantic context for coding agents | Persistent graph, auto-sync, broad language/agent support and impact/context retrieval | Change Contract `PASS/FAIL/UNKNOWN` + fingerprint and HTTP schema/auth/status drift |
+| [Nx](https://github.com/nrwl/nx) | ≈29.1k | Monorepo build and CI orchestration | Cache, affected tasks, plugins and distributed CI | Evidence about a change, not a replacement for build orchestration |
+| [Semgrep](https://github.com/semgrep/semgrep) | ≈15.9k | Pattern/SAST/SCA/secrets | Security rules and language coverage | Cross-layer HTTP contracts and declared patch intent |
+| [CodeQL](https://github.com/github/codeql) | ≈9.8k | Semantic query and security analysis | Deep data-flow/query engine | Simpler contract evidence for reviewers; not a CodeQL replacement |
+| [Sourcegraph](https://github.com/sourcegraph/sourcegraph-public-snapshot) | ≈10.3k | Large-scale code search/intelligence | Multi-repo indexing, references and migrations | Local snapshot-first guardrails for one change |
+
+¹ Snapshot on 2026-07-18; stars indicate community scale, not quality or accuracy.
+
+### Why Huccanta can tell the difference
+
+Huccanta uses AST evidence, not an LLM-generated diagram: ts-morph resolves JS/TS symbols; the
+tree-sitter path records grammar node types, owner/class, receiver and source location. A call is
+connected only when the owner-qualified symbol or a unique same-file symbol proves the target.
+Bare-name cross-file calls and ambiguous calls are omitted instead of guessed. `GraphEdge.resolution`
+records whether the evidence was `exact` or `same-file`.
+
+Contract Radar then checks the boundary that import graphs cannot see: HTTP method/path,
+request/response fields, Authorization, statuses and test observations. Change Contract compares
+before/after snapshots against an explicit policy, fails closed on `UNKNOWN`, and emits a SHA-256
+fingerprint tied to the checked inputs.
 
 ## Overview
 
@@ -44,7 +72,7 @@ Click a node to see the real code, its callers/callees, why it was flagged and h
 
 Code can come from: pasted source, a local folder, or a Git repo URL to clone and scan. Scanned projects can be saved for quick reopening.
 
-**Supported languages:** JavaScript/TypeScript (via ts-morph, with accurate symbol resolution) and **Python, Java, Go, C/C++, C#** (via tree-sitter). For the tree-sitter set, calls are matched by function name (a heuristic), so resolution is less precise than for JS/TS.
+**Supported languages:** JavaScript/TypeScript (via ts-morph, with accurate symbol resolution) and **Python, Java, Go, C/C++, C#** (via tree-sitter). Tree-sitter languages use a conservative static resolver: qualified owner/receiver or a unique same-file symbol; bare-name cross-file calls and ambiguous calls are omitted instead of guessed.
 
 ## Requirements
 
@@ -147,6 +175,15 @@ npx huccanta-contract --before base --after head --policy contract-policy.json
 This repository runs `npm run contract:check` in GitHub Actions. The change gate reuses the
 `verify_change` core; its fingerprint binds the exact snapshots and policy that were checked.
 
+## Reproducible benchmark
+
+Run `npm run benchmark` for a fixed six-language fixture (Python, Java, Go, C, C++, C#), ten measured
+iterations after one warm-up, with median and p95 timings. It also asserts seven labeled edges and
+four under-evidenced calls that must remain unresolved. This measures Huccanta's local parser and
+Contract Radar; it is not apples-to-apples with CodeGraph's self-reported agent-level benchmark. Keep parser
+speed, graph accuracy and agent token/tool reduction as separate metrics. The small ground-truth
+fixture is a regression guard, not a claim of 100% accuracy on real repositories.
+
 ## Vision: Repo Doctor
 
 > This is the **direction**, not shipped features. The sections above describe what runs today.
@@ -161,7 +198,7 @@ The long-term goal: don't just *draw* the code — help you *decide what to chan
 
 Plus a **missing-code detector**: unresolved imports; packages imported but not declared; a frontend API call with no matching route (and routes no one uses); env vars read but absent from `.env.example`; config pointing at nonexistent files; interfaces missing methods; routes without tests. For polyglot repos, link through **real contracts** instead of guessing: `fetch("/api/users")` → route/OpenAPI → `get_users()` → `users` table.
 
-**Roadmap (MVP — JS/TS first, for accuracy):**
+**Roadmap (MVP — JS/TS is the most precise zone; polyglot uses conservative static resolution):**
 
 - ✅ **Phase 1 · Import Health Report** *(shipped — `import_health` tool + `POST /api/import-health`)* — entry / possibly-unused files (confidence + evidence); unresolved imports (assets ignored); stats. Based on ts-morph's real import/export resolution.
 - ✅ **Phase 2 · File-level graph** *(shipped — `file_graph` tool + `POST /api/file-graph` + a **Function | File** toggle in the UI)* — node = file, edge = real import/export (ts-morph, no name-based guessing); flags **file dependency cycles** (circular imports) and classifies entry/normal/orphan. The **Contract** mode (route/OpenAPI/DB) is left for a later phase.

@@ -1,9 +1,9 @@
 // Parser đa ngôn ngữ bằng tree-sitter (WASM) cho các ngôn ngữ ngoài JS/TS.
-// JS/TS vẫn do ts-morph xử lý (chính xác hơn nhờ resolve symbol); ở đây là Python/Java/Go/C/C++/C#...
+// JS/TS vẫn do ts-morph xử lý; nhóm này dùng AST + resolver tĩnh bảo thủ theo owner/scope.
 //
 // Đầu ra là `Graph` CHƯA chấm điểm — dùng chung `analyzeGraph` (SCC/complexity/fan-in-out) để tính.
-// Lưu ý: tree-sitter không resolve symbol như ts-morph, nên lời gọi được khớp THEO TÊN
-// (ưu tiên cùng file, hoặc khi tên là duy nhất toàn dự án). Đây là heuristic, kém chính xác hơn JS/TS.
+// Tree-sitter không có type checker, nên resolver không cố đoán: chỉ nối cạnh khi đích là
+// qualified symbol rõ ràng hoặc symbol duy nhất trong cùng file; không nối theo tên trần xuyên file.
 import Parser from 'web-tree-sitter';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -17,8 +17,9 @@ interface LangConfig {
   extensions: string[];   // đuôi file (không dấu chấm, chữ thường)
   defTypes: string[];     // node type là định nghĩa hàm/method
   nameQuery: string;      // query bắt @def (node định nghĩa) + @name (tên)
-  callQuery: string;      // query bắt @c (tên hàm được gọi)
+  callQuery: string;      // query bắt @call (lời gọi) + @c (tên hàm được gọi)
   classTypes: string[];   // node type bao ngoài để tạo tiền tố "Class.method"
+  branchTypes: string[];  // node type nhánh rẽ của grammar, dùng tính complexity
 }
 
 const CONFIGS: LangConfig[] = [
@@ -27,8 +28,9 @@ const CONFIGS: LangConfig[] = [
     extensions: ['py', 'pyi'],
     defTypes: ['function_definition'],
     nameQuery: '(function_definition name: (identifier) @name) @def',
-    callQuery: '(call function: [(identifier) @c (attribute attribute: (identifier) @c)])',
-    classTypes: ['class_definition']
+    callQuery: '(call function: [(identifier) @c (attribute attribute: (identifier) @c)]) @call',
+    classTypes: ['class_definition'],
+    branchTypes: ['if_statement', 'for_statement', 'while_statement', 'except_clause', 'conditional_expression']
   },
   {
     grammar: 'java',
@@ -36,8 +38,18 @@ const CONFIGS: LangConfig[] = [
     defTypes: ['method_declaration', 'constructor_declaration'],
     nameQuery:
       '[(method_declaration name: (identifier) @name) (constructor_declaration name: (identifier) @name)] @def',
-    callQuery: '(method_invocation name: (identifier) @c)',
-    classTypes: ['class_declaration', 'interface_declaration', 'enum_declaration', 'record_declaration']
+    callQuery: '(method_invocation name: (identifier) @c) @call',
+    classTypes: ['class_declaration', 'interface_declaration', 'enum_declaration', 'record_declaration'],
+    branchTypes: [
+      'if_statement',
+      'for_statement',
+      'enhanced_for_statement',
+      'while_statement',
+      'do_statement',
+      'switch_block_statement_group',
+      'catch_clause',
+      'conditional_expression'
+    ]
   },
   {
     grammar: 'go',
@@ -46,16 +58,24 @@ const CONFIGS: LangConfig[] = [
     nameQuery:
       '[(function_declaration name: (identifier) @name) (method_declaration name: (field_identifier) @name)] @def',
     callQuery:
-      '(call_expression function: [(identifier) @c (selector_expression field: (field_identifier) @c)])',
-    classTypes: []
+      '(call_expression function: [(identifier) @c (selector_expression field: (field_identifier) @c)]) @call',
+    classTypes: [],
+    branchTypes: [
+      'if_statement',
+      'for_statement',
+      'communication_case',
+      'expression_case',
+      'type_case'
+    ]
   },
   {
     grammar: 'c',
     extensions: ['c', 'h'],
     defTypes: ['function_definition'],
     nameQuery: '(function_definition declarator: (function_declarator declarator: (identifier) @name)) @def',
-    callQuery: '(call_expression function: (identifier) @c)',
-    classTypes: []
+    callQuery: '(call_expression function: (identifier) @c) @call',
+    classTypes: [],
+    branchTypes: ['if_statement', 'for_statement', 'while_statement', 'do_statement', 'case_statement', 'conditional_expression']
   },
   {
     grammar: 'cpp',
@@ -64,8 +84,9 @@ const CONFIGS: LangConfig[] = [
     nameQuery:
       '(function_definition declarator: (function_declarator declarator: [(identifier) @name (field_identifier) @name (qualified_identifier) @name])) @def',
     callQuery:
-      '(call_expression function: [(identifier) @c (field_expression field: (field_identifier) @c)])',
-    classTypes: ['class_specifier', 'struct_specifier']
+      '(call_expression function: [(identifier) @c (field_expression field: (field_identifier) @c)]) @call',
+    classTypes: ['class_specifier', 'struct_specifier'],
+    branchTypes: ['if_statement', 'for_statement', 'while_statement', 'do_statement', 'case_statement', 'conditional_expression', 'catch_clause']
   },
   {
     grammar: 'c_sharp',
@@ -74,8 +95,19 @@ const CONFIGS: LangConfig[] = [
     nameQuery:
       '[(method_declaration name: (identifier) @name) (constructor_declaration name: (identifier) @name) (local_function_statement name: (identifier) @name)] @def',
     callQuery:
-      '(invocation_expression function: [(identifier) @c (member_access_expression name: (identifier) @c)])',
-    classTypes: ['class_declaration', 'struct_declaration', 'interface_declaration', 'record_declaration']
+      '(invocation_expression function: [(identifier) @c (member_access_expression name: (identifier) @c)]) @call',
+    classTypes: ['class_declaration', 'struct_declaration', 'interface_declaration', 'record_declaration'],
+    branchTypes: [
+      'if_statement',
+      'for_statement',
+      'for_each_statement',
+      'while_statement',
+      'do_statement',
+      'case_switch_label',
+      'default_switch_label',
+      'catch_clause',
+      'conditional_expression'
+    ]
   }
 ];
 
@@ -93,9 +125,6 @@ function extOf(filePath: string) {
   const dot = filePath.lastIndexOf('.');
   return dot === -1 ? '' : filePath.slice(dot + 1).toLowerCase();
 }
-
-// Node điều kiện tính vào độ phức tạp — heuristic khớp nhiều ngôn ngữ theo tên node type.
-const BRANCH_RE = /(?:^|_)(if|elif|for|foreach|while|do|case|when|catch|except|conditional|ternary)(?:_|$)/;
 
 // Các object WASM (Parser/Language/Query) không được JS GC thu hồi → phải tái dùng,
 // không tạo mới mỗi lần (nếu không sẽ rò rỉ heap WASM khi MCP server chạy dài).
@@ -133,7 +162,15 @@ function getQueries(config: LangConfig, language: Parser.Language) {
 
 interface DefRecord {
   node: GraphNode;
-  calleeNames: string[];
+  ownerName: string;
+  selfReceiver: string;
+  calls: CallRecord[];
+}
+
+interface CallRecord {
+  name: string;
+  receiver: string;
+  explicitReceiver: boolean;
 }
 
 function uniqueId(base: string, used: Set<string>, line: number) {
@@ -161,6 +198,27 @@ function enclosingClassName(node: Parser.SyntaxNode, classTypes: string[]): stri
   return '';
 }
 
+function enclosingOwner(node: Parser.SyntaxNode, config: LangConfig) {
+  const className = config.classTypes.length ? enclosingClassName(node, config.classTypes) : '';
+  if (className) return { name: className, selfReceiver: '' };
+  // Go không có class node; method receiver vẫn là owner tĩnh (S.Method).
+  if (config.grammar === 'go' && node.type === 'method_declaration') {
+    const receiver = node.childForFieldName('receiver');
+    const stack = receiver ? [receiver] : [];
+    while (stack.length) {
+      const current = stack.pop()!;
+      const typeNode = current.childForFieldName('type');
+      if (typeNode) {
+        const typeName = typeNode.text.match(/[A-Za-z_][A-Za-z0-9_]*/)?.[0] ?? '';
+        const receiverName = current.childForFieldName('name')?.text ?? '';
+        return { name: typeName, selfReceiver: receiverName };
+      }
+      for (const child of current.namedChildren) stack.push(child);
+    }
+  }
+  return { name: '', selfReceiver: '' };
+}
+
 function nearestDefStart(node: Parser.SyntaxNode, defTypes: string[]): number | null {
   let current: Parser.SyntaxNode | null = node.parent;
   while (current) {
@@ -170,16 +228,72 @@ function nearestDefStart(node: Parser.SyntaxNode, defTypes: string[]): number | 
   return null;
 }
 
-function complexityOf(defNode: Parser.SyntaxNode, defTypes: string[]) {
+function complexityOf(defNode: Parser.SyntaxNode, defTypes: string[], branchTypes: string[]) {
   let complexity = 1;
   const stack = [...defNode.namedChildren];
   while (stack.length) {
     const node = stack.pop()!;
     if (defTypes.includes(node.type)) continue; // hàm con là đơn vị riêng — không tính vào hàm ngoài
-    if (BRANCH_RE.test(node.type)) complexity += 1;
+    if (branchTypes.includes(node.type)) complexity += 1;
     for (const child of node.namedChildren) stack.push(child);
   }
   return complexity;
+}
+
+function functionNode(callNode: Parser.SyntaxNode) {
+  return callNode.childForFieldName('function') ?? callNode.childForFieldName('name');
+}
+
+function callParts(callNode: Parser.SyntaxNode, nameNode: Parser.SyntaxNode): CallRecord {
+  const fn = functionNode(callNode);
+  const receiverNode =
+    fn?.childForFieldName('object') ??
+    fn?.childForFieldName('operand') ??
+    fn?.childForFieldName('expression') ??
+    fn?.childForFieldName('argument') ??
+    callNode.childForFieldName('object');
+  const functionWrapsName = Boolean(
+    fn && (fn.startIndex !== nameNode.startIndex || fn.endIndex !== nameNode.endIndex)
+  );
+  return {
+    name: nameNode.text,
+    receiver: receiverNode?.text.trim() ?? '',
+    explicitReceiver: Boolean(receiverNode) || functionWrapsName
+  };
+}
+
+function normalizeQualified(value: string) {
+  return value.replace(/\s+/g, '').replace(/::|->/g, '.').replace(/^this\./, '').replace(/^self\./, '');
+}
+
+function resolveCallTarget(
+  record: DefRecord,
+  call: CallRecord,
+  byQualified: Map<string, DefRecord[]>,
+  bySimple: Map<string, DefRecord[]>
+) {
+  const name = normalizeQualified(call.name);
+  const receiver = normalizeQualified(call.receiver);
+  const owner = normalizeQualified(record.ownerName);
+  const selfReceivers = ['this', 'self', normalizeQualified(record.selfReceiver)].filter(Boolean);
+  const receiverTargetsCurrentOwner = !call.explicitReceiver || selfReceivers.includes(receiver);
+
+  const qualifiedCandidates = [
+    receiver && !selfReceivers.includes(receiver) ? `${receiver}.${name}` : '',
+    receiverTargetsCurrentOwner && owner ? `${owner}.${name}` : ''
+  ]
+    .filter(Boolean)
+    .flatMap((key) => byQualified.get(key) ?? []);
+  const exact = [...new Map(qualifiedCandidates.map((item) => [item.node.id, item])).values()];
+  const exactSameFile = exact.filter((item) => item.node.file === record.node.file);
+  if (exactSameFile.length === 1) return { id: exactSameFile[0].node.id, resolution: 'exact' as const };
+  if (exact.length === 1) return { id: exact[0].node.id, resolution: 'exact' as const };
+
+  const sameFile = (bySimple.get(name) ?? []).filter((item) => item.node.file === record.node.file);
+  if (!call.explicitReceiver && sameFile.length === 1) return { id: sameFile[0].node.id, resolution: 'same-file' as const };
+
+  // Receiver không map được vào owner exact thì cố ý unresolved, không đoán theo tên.
+  return undefined;
 }
 
 export async function parseTreeSitter(files: SourceFileInput[]): Promise<Graph> {
@@ -195,7 +309,8 @@ export async function parseTreeSitter(files: SourceFileInput[]): Promise<Graph> 
 
   const records: DefRecord[] = [];
   const usedIds = new Set<string>();
-  const nameToIds = new Map<string, string[]>();
+  const byQualified = new Map<string, DefRecord[]>();
+  const bySimple = new Map<string, DefRecord[]>();
   const parser = await ensureParser();
 
   for (const [config, configFiles] of byConfig) {
@@ -220,13 +335,16 @@ export async function parseTreeSitter(files: SourceFileInput[]): Promise<Graph> 
         const defNode = match.captures.find((c) => c.name === 'def')?.node;
         const nameNode = match.captures.find((c) => c.name === 'name')?.node;
         if (!defNode || !nameNode) continue;
-        const bare = nameNode.text; // tên trần dùng để khớp lời gọi (call site cũng là tên trần)
-        const prefix = config.classTypes.length ? enclosingClassName(defNode, config.classTypes) : '';
+        const bare = nameNode.text.split(/::|\./).at(-1) ?? nameNode.text;
+        const owner = enclosingOwner(defNode, config);
+        const prefix = owner.name;
         const display = prefix ? `${prefix}.${bare}` : bare;
         const line = nameNode.startPosition.row + 1;
         const id = uniqueId(`${file.path}#${display}`, usedIds, line);
         const record: DefRecord = {
-          calleeNames: [],
+          ownerName: prefix,
+          selfReceiver: owner.selfReceiver,
+          calls: [],
           node: {
             id,
             name: display,
@@ -234,7 +352,7 @@ export async function parseTreeSitter(files: SourceFileInput[]): Promise<Graph> 
             line,
             code: defNode.text,
             body: defNode.text,
-            complexity: complexityOf(defNode, config.defTypes),
+            complexity: complexityOf(defNode, config.defTypes, config.branchTypes),
             fanIn: 0,
             fanOut: 0,
             inCycle: false,
@@ -245,16 +363,24 @@ export async function parseTreeSitter(files: SourceFileInput[]): Promise<Graph> 
         };
         records.push(record);
         startToId.set(defNode.startIndex, record);
-        const list = nameToIds.get(bare) ?? [];
-        list.push(id);
-        nameToIds.set(bare, list);
+        const simpleList = bySimple.get(bare) ?? [];
+        simpleList.push(record);
+        bySimple.set(bare, simpleList);
+        const qualified = normalizeQualified(prefix ? `${prefix}.${bare}` : bare);
+        const qualifiedList = byQualified.get(qualified) ?? [];
+        qualifiedList.push(record);
+        byQualified.set(qualified, qualifiedList);
       }
 
-      // Gán mỗi lời gọi cho hàm bao gần nhất (đúng cả khi lồng nhau).
-      for (const capture of callQuery.captures(tree.rootNode)) {
-        const start = nearestDefStart(capture.node, config.defTypes);
+      // Ghi receiver + owner của call site; resolve đích sau khi đã có toàn bộ symbol table.
+      for (const match of callQuery.matches(tree.rootNode)) {
+        const callNode = match.captures.find((c) => c.name === 'call')?.node;
+        const nameNode = match.captures.find((c) => c.name === 'c')?.node;
+        if (!callNode || !nameNode) continue;
+        const start = nearestDefStart(callNode, config.defTypes);
         if (start === null) continue;
-        startToId.get(start)?.calleeNames.push(capture.node.text);
+        const record = startToId.get(start);
+        if (record) record.calls.push(callParts(callNode, nameNode));
       }
 
       tree.delete();
@@ -263,14 +389,10 @@ export async function parseTreeSitter(files: SourceFileInput[]): Promise<Graph> 
 
   const edges = new Map<string, GraphEdge>();
   for (const record of records) {
-    const fromFile = record.node.file;
-    for (const name of record.calleeNames) {
-      const candidates = nameToIds.get(name) ?? [];
-      let target: string | undefined;
-      if (candidates.length === 1) target = candidates[0];
-      else if (candidates.length > 1) target = candidates.find((id) => id.startsWith(`${fromFile}#`));
-      if (!target) continue; // không rõ đích (tên trùng nhiều nơi) → bỏ, tránh vẽ cạnh sai
-      const key = `${record.node.id}>${target}`;
+    for (const call of record.calls) {
+      const target = resolveCallTarget(record, call, byQualified, bySimple);
+      if (!target) continue;
+      const key = `${record.node.id}>${target.id}`;
       const existing = edges.get(key);
       if (existing) {
         existing.count = (existing.count ?? 1) + 1;
@@ -278,10 +400,11 @@ export async function parseTreeSitter(files: SourceFileInput[]): Promise<Graph> 
       }
       edges.set(key, {
         from: record.node.id,
-        to: target,
+        to: target.id,
         cycle: false,
-        kind: record.node.id === target ? 'recursive' : 'call',
-        count: 1
+        kind: record.node.id === target.id ? 'recursive' : 'call',
+        count: 1,
+        resolution: target.resolution
       });
     }
   }

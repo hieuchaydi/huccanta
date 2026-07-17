@@ -19,6 +19,7 @@
     "build": "tsc -b && vite build",
     "start": "tsx server/index.ts",
     "mcp": "tsx server/mcp.ts",
+    "benchmark": "tsx benchmarks/benchmark.ts",
     "contract:check": "tsx server/contractCli.ts --allow-unknown .",
     "serve": "npm run build && npm run start",
     "preview": "vite preview --host 127.0.0.1",
