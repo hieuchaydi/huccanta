@@ -184,9 +184,21 @@ Contract Radar; it is not apples-to-apples with CodeGraph's self-reported agent-
 speed, graph accuracy and agent token/tool reduction as separate metrics. The small ground-truth
 fixture is a regression guard, not a claim of 100% accuracy on real repositories.
 
+## Direction, data and Python scope
+
+1. **Direction:** Huccanta is a local evidence gate for code changes; the graph explains context,
+   while Contract Radar/Change Contract decide whether a patch has enough evidence.
+2. **Database:** the project **does use local SQLite** for the saved-project library, but analysis
+   accepts `files/path` and does not depend on the DB. There is no graph or cloud database.
+3. **Roadmap:** shipped, hardening and next work—each with exit criteria—are tracked in
+   [docs/ROADMAP.md](docs/ROADMAP.md), separate from product claims.
+4. **Python:** the AST resolver covers class owners, `self`, ambiguity guards and explicit Python
+   branch types. Cross-module import/alias resolution remains an openly documented limitation.
+
 ## Vision: Repo Doctor
 
 > This is the **direction**, not shipped features. The sections above describe what runs today.
+> See [docs/ROADMAP.md](docs/ROADMAP.md) for exit criteria and the current Python scope.
 
 The long-term goal: don't just *draw* the code — help you *decide what to change or delete, safely*. Every verdict comes with **evidence and a confidence score**, never a single-signal guess.
 
@@ -201,7 +213,7 @@ Plus a **missing-code detector**: unresolved imports; packages imported but not 
 **Roadmap (MVP — JS/TS is the most precise zone; polyglot uses conservative static resolution):**
 
 - ✅ **Phase 1 · Import Health Report** *(shipped — `import_health` tool + `POST /api/import-health`)* — entry / possibly-unused files (confidence + evidence); unresolved imports (assets ignored); stats. Based on ts-morph's real import/export resolution.
-- ✅ **Phase 2 · File-level graph** *(shipped — `file_graph` tool + `POST /api/file-graph` + a **Function | File** toggle in the UI)* — node = file, edge = real import/export (ts-morph, no name-based guessing); flags **file dependency cycles** (circular imports) and classifies entry/normal/orphan. The **Contract** mode (route/OpenAPI/DB) is left for a later phase.
+- ✅ **Phase 2 · File-level graph** *(shipped — `file_graph` tool + `POST /api/file-graph` + a **Function | File** toggle in the UI)* — node = file, edge = real import/export (ts-morph, no name-based guessing); flags **file dependency cycles** (circular imports) and classifies entry/normal/orphan. HTTP route contracts shipped in Phase 4; OpenAPI/DB schema remain later roadmap work.
 - ✅ **Phase 3 · Simulate delete (Refactor Sandbox)** *(shipped — `simulate_change` tool + `POST /api/simulate`)* — drop nodes from a shadow graph, list broken callers + newly-orphaned functions + affected tests, recompute cycles/fan-in-out. *(Built before Phase 2 as the flagship differentiator.)*
 - ✅ **Phase 4 · Contract Radar** *(shipped — UI + `contract_radar` + `POST /api/contract-radar` + CI CLI)* — connect HTTP clients to route source, check schema/auth/status drift, and overlay HTTP test observations.
 - ✅ **Phase 5 · Change Contract** *(shipped — `verify_change` + `POST /api/change-contract`)* — verify patch intent with structural deltas and a fail-closed policy.

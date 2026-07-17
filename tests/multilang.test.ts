@@ -51,6 +51,62 @@ describe('analyzeProject (multi-language)', () => {
     expect(byId(graph, 'c.py#busy')?.complexity).toBe(4);
   });
 
+  it('resolve self.method theo đúng owner khi Python có method trùng tên', async () => {
+    const graph = await analyzeProject([
+      {
+        path: 'owners.py',
+        content: `class A:
+    def run(self):
+        return self.helper()
+    def helper(self):
+        return 1
+
+class B:
+    def run(self):
+        return self.helper()
+    def helper(self):
+        return 2
+`
+      }
+    ]);
+
+    expect(graph.edges.find((edge) =>
+      edge.from === 'owners.py#A.run' && edge.to === 'owners.py#A.helper'
+    )?.resolution).toBe('exact');
+    expect(graph.edges.find((edge) =>
+      edge.from === 'owners.py#B.run' && edge.to === 'owners.py#B.helper'
+    )?.resolution).toBe('exact');
+    expect(graph.edges.some((edge) => edge.from === 'owners.py#A.run' && edge.to === 'owners.py#B.helper')).toBe(false);
+    expect(graph.edges.some((edge) => edge.from === 'owners.py#B.run' && edge.to === 'owners.py#A.helper')).toBe(false);
+  });
+
+  it('đếm branch node riêng của Python thay vì regex node type chung', async () => {
+    const graph = await analyzeProject([
+      {
+        path: 'branches.py',
+        content: `def decide(value, items):
+    if value and items:
+        return 1
+    elif value:
+        return 2
+    match value:
+        case 3:
+            return 3
+        case _:
+            return 0
+
+def active(items):
+    return [item for item in items if item]
+`
+      }
+    ]);
+
+    // base + if + boolean operator + elif + 2 case clauses
+    expect(byId(graph, 'branches.py#decide')?.complexity).toBe(6);
+    // base + comprehension for + comprehension if
+    expect(byId(graph, 'branches.py#active')?.complexity).toBe(3);
+  });
+
   it('resolve method theo owner/class thay vì chọn nhầm method trùng tên', async () => {
     const graph = await analyzeProject([
       {

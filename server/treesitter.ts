@@ -30,7 +30,18 @@ const CONFIGS: LangConfig[] = [
     nameQuery: '(function_definition name: (identifier) @name) @def',
     callQuery: '(call function: [(identifier) @c (attribute attribute: (identifier) @c)]) @call',
     classTypes: ['class_definition'],
-    branchTypes: ['if_statement', 'for_statement', 'while_statement', 'except_clause', 'conditional_expression']
+    branchTypes: [
+      'if_statement',
+      'elif_clause',
+      'if_clause',
+      'for_statement',
+      'for_in_clause',
+      'while_statement',
+      'except_clause',
+      'case_clause',
+      'conditional_expression',
+      'boolean_operator'
+    ]
   },
   {
     grammar: 'java',

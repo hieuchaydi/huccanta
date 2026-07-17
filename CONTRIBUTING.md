@@ -19,9 +19,13 @@ npm run mcp        # MCP server qua stdio (đa ngôn ngữ)
 ```bash
 npm run build      # tsc -b (type-check) + vite build
 npm test           # vitest — phải xanh
+npm run contract:check  # gate contract/cấu trúc giống CI
+npm run benchmark       # ground-truth resolver + số đo local khi sửa analyzer
 ```
 
-CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) chạy đúng hai lệnh này trên Node 22 cho mỗi push/PR vào `main`. Đừng push khi build/test đỏ.
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) chạy build, test và Contract Radar gate trên
+Node 22 cho mỗi push/PR vào `main`. Benchmark phải chạy local khi sửa analyzer/resolver. Đừng push khi
+bất kỳ gate bắt buộc nào đỏ.
 
 ## Không bao giờ commit
 
