@@ -13,6 +13,8 @@ import { analyzeProject } from './analyze';
 import { importHealthReport } from './importHealth';
 import { fileGraphReport } from './fileGraph';
 import { simulateChange } from './simulate';
+import { verifyChangeContract } from './changeContract';
+import { contractRadarReport } from './contractRadar';
 import { collectSourceFiles } from './scan';
 
 // Cho phép "npx huccanta-mcp <folder>": nếu truyền thư mục, các tool có thể bỏ trống
@@ -23,6 +25,32 @@ const fileInput = z.object({
   path: z.string().describe('Đường dẫn file (tương đối), ví dụ "src/auth.ts".'),
   content: z.string().describe('Nội dung file.')
 });
+
+const changeContractPolicyInput = z
+  .object({
+    name: z.string().optional().describe('Tên/ý định ngắn của thay đổi.'),
+    allow: z
+      .object({
+        removedFiles: z.array(z.string()).optional().describe('File được phép biến mất.'),
+        removedFunctions: z.array(z.string()).optional().describe('ID hàm được phép biến mất (file#name).')
+      })
+      .optional(),
+    preserve: z
+      .object({
+        files: z.array(z.string()).optional().describe('File bắt buộc vẫn tồn tại sau thay đổi.'),
+        functions: z.array(z.string()).optional().describe('ID hàm bắt buộc vẫn tồn tại sau thay đổi.')
+      })
+      .optional(),
+    limits: z
+      .object({
+        maxNewUnresolvedImports: z.number().int().nonnegative().optional(),
+        maxNewFilesInCycles: z.number().int().nonnegative().optional(),
+        maxNewFunctionsInCycles: z.number().int().nonnegative().optional(),
+        maxNewHotspots: z.number().int().nonnegative().optional()
+      })
+      .optional()
+  })
+  .optional();
 
 // Hai tool đều nhận cùng một cách chỉ định nguồn code: "path" (thư mục local) hoặc "files".
 const sourceShape = {
@@ -75,7 +103,7 @@ function rankedHotspots(graph: Graph, limit: number) {
 
 const json = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
 
-const server = new McpServer({ name: 'huccanta', version: '0.3.0' });
+const server = new McpServer({ name: 'huccanta', version: '0.4.0' });
 
 server.registerTool(
   'analyze_code',
@@ -183,6 +211,42 @@ server.registerTool(
   },
   async ({ path, files, kind, target }) => {
     return json(await simulateChange(await loadFiles({ path, files }), { kind, target }));
+  }
+);
+
+server.registerTool(
+  'verify_change',
+  {
+    title: 'Change Contract — verify a proposed change',
+    description:
+      'So sánh hai snapshot JS/TS và kiểm contract của thay đổi theo kiểu fail-closed. ' +
+      'Mặc định không cho phép file/hàm biến mất và không cho thêm import gãy, cycle hoặc hotspot. ' +
+      'Trả PASS/FAIL/UNKNOWN, structural delta, bằng chứng và SHA-256 fingerprint deterministic. ' +
+      'Đây là chứng thư cấu trúc tĩnh, không phải formal proof hay kiểm chứng hành vi runtime.',
+    inputSchema: {
+      beforeFiles: z.array(fileInput).min(1).describe('Snapshot JS/TS trước thay đổi.'),
+      afterFiles: z.array(fileInput).min(1).describe('Snapshot JS/TS sau thay đổi.'),
+      policy: changeContractPolicyInput
+    }
+  },
+  async ({ beforeFiles, afterFiles, policy }) => {
+    return json(await verifyChangeContract(beforeFiles, afterFiles, policy));
+  }
+);
+
+server.registerTool(
+  'contract_radar',
+  {
+    title: 'Contract Radar — connect HTTP clients to server routes',
+    description:
+      'Quét source JS/TS để nối contract không có cạnh import trực tiếp: fetch/Axios instance ở client ↔ ' +
+      'Express/Fastify plugin/NestJS/Next App Router ở server. Báo route/method/request-response field/auth/status drift, ' +
+      'phủ HTTP test observations, liệt kê route không có consumer local và biểu thức động ở dạng unknown (không đoán). ' +
+      'Không cần OpenAPI và không cần chạy ứng dụng.',
+    inputSchema: { ...sourceShape }
+  },
+  async ({ path, files }) => {
+    return json(contractRadarReport(await loadFiles({ path, files })));
   }
 );
 

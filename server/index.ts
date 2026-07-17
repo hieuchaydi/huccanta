@@ -10,7 +10,9 @@ import { analyzeProject } from './analyze';
 import { importHealthReport } from './importHealth';
 import { fileGraphReport } from './fileGraph';
 import { simulateChange } from './simulate';
-import type { ChangeKind, SourceFileInput } from '../src/types';
+import { verifyChangeContract } from './changeContract';
+import { contractRadarReport } from './contractRadar';
+import type { ChangeContractPolicy, ChangeKind, SourceFileInput } from '../src/types';
 import { collectSourceFiles } from './scan';
 import { deleteProject, getProject, listProjects, saveProject, type ProjectMeta } from './db';
 
@@ -80,6 +82,36 @@ app.post('/api/simulate', async (req, res) => {
     res.json(await simulateChange(files, { kind, target }));
   } catch (error) {
     res.status(500).json({ code: 'analyzeFailed', error: error instanceof Error ? error.message : 'Phân tích thất bại.' });
+  }
+});
+
+app.post('/api/change-contract', async (req, res) => {
+  const beforeFiles = req.body?.beforeFiles as SourceFileInput[] | undefined;
+  const afterFiles = req.body?.afterFiles as SourceFileInput[] | undefined;
+  const policy = (req.body?.policy && typeof req.body.policy === 'object'
+    ? req.body.policy
+    : {}) as ChangeContractPolicy;
+  if (!Array.isArray(beforeFiles) || beforeFiles.length === 0 || !Array.isArray(afterFiles) || afterFiles.length === 0) {
+    res.status(400).json({ code: 'missingSnapshots', error: 'Cần cả beforeFiles và afterFiles để kiểm Change Contract.' });
+    return;
+  }
+  try {
+    res.json(await verifyChangeContract(beforeFiles, afterFiles, policy));
+  } catch (error) {
+    res.status(500).json({ code: 'contractFailed', error: error instanceof Error ? error.message : 'Không kiểm được Change Contract.' });
+  }
+});
+
+app.post('/api/contract-radar', (req, res) => {
+  const files = req.body?.files as SourceFileInput[] | undefined;
+  if (!Array.isArray(files) || files.length === 0) {
+    res.status(400).json({ code: 'missingFiles', error: 'Thiếu danh sách files để phân tích.' });
+    return;
+  }
+  try {
+    res.json(contractRadarReport(files));
+  } catch (error) {
+    res.status(500).json({ code: 'contractRadarFailed', error: error instanceof Error ? error.message : 'Không quét được HTTP contract.' });
   }
 });
 

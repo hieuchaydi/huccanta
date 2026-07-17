@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Route,
   Save,
+  ScanSearch,
   Sun,
   Trash2,
   Upload,
@@ -19,7 +20,7 @@ import {
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { layoutGraph, type LayoutMode, NODE_HEIGHT, nodeWidth } from './layout';
 import { type Lang, makeT, type TFn } from './i18n';
-import type { FileGraph, Graph, GraphEdge, GraphNode, SourceFileInput } from './types';
+import type { ContractRadarReport, FileGraph, Graph, GraphEdge, GraphNode, SourceFileInput } from './types';
 
 const FILE_HUES = ['#3F5BF6', '#12A669', '#C77B00', '#8B5CF6', '#E23D4B', '#0E9AA7', '#0891B2', '#DB2777'];
 const SOURCE_EXT = /\.(cjs|mjs|js|jsx|ts|tsx)$/i;
@@ -447,6 +448,8 @@ export function App() {
   const [graph, setGraph] = useState<Graph | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('function');
   const [fileGraphView, setFileGraphView] = useState<Graph | null>(null);
+  const [contractReport, setContractReport] = useState<ContractRadarReport | null>(null);
+  const [contractOpen, setContractOpen] = useState(false);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('layered');
   const [groupByFile, setGroupByFile] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
@@ -563,6 +566,8 @@ export function App() {
       setProjectMeta({ name, source });
       setViewMode('function');
       setFileGraphView(null);
+      setContractReport(null);
+      setContractOpen(false);
       setSelected(null);
       setHiddenFiles(new Set());
       setFileFilter(null);
@@ -652,6 +657,8 @@ export function App() {
       setProjectMeta({ name: t('label.git'), source: 'git' });
       setViewMode('function');
       setFileGraphView(null);
+      setContractReport(null);
+      setContractOpen(false);
       setSelected(null);
       setHiddenFiles(new Set());
       setFileFilter(null);
@@ -714,6 +721,23 @@ export function App() {
       requestAnimationFrame(() => fitGraph(mapped));
     } catch (error) {
       setViewMode('function');
+      setStatus(errText(error, t, 'status.analyzeFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadContractRadar() {
+    if (sourceFiles.length === 0) return;
+    setBusy(true);
+    setStatus(t('status.contractLoading'));
+    try {
+      const report = await postJson<ContractRadarReport>('/api/contract-radar', { files: sourceFiles });
+      setContractReport(report);
+      setContractOpen(true);
+      const errors = report.issues.filter((issue) => issue.severity === 'error').length;
+      setStatus(t('status.contractResult', { matches: report.summary.matches, errors, unknowns: report.summary.unknowns }));
+    } catch (error) {
       setStatus(errText(error, t, 'status.analyzeFailed'));
     } finally {
       setBusy(false);
@@ -944,6 +968,14 @@ export function App() {
               <Boxes size={15} /> {t('view.file')}
             </button>
           </div>
+          <button
+            className={`btn ${contractOpen ? 'on' : ''}`}
+            onClick={() => (contractReport ? setContractOpen(true) : void loadContractRadar())}
+            disabled={sourceFiles.length === 0}
+            title={sourceFiles.length === 0 ? t('contract.unavailable') : t('contract.button.title')}
+          >
+            <ScanSearch size={15} /> {t('contract.button')}
+          </button>
           <button className={`btn ${groupByFile ? 'on' : ''}`} onClick={() => setGroupByFile((value) => !value)} title={t('btn.group.title')}>
             <Layers3 size={15} /> {t('btn.group')}
           </button>
@@ -1156,6 +1188,12 @@ export function App() {
           </div>
         </div>
       )}
+
+      {contractOpen && contractReport && (
+        <div className="modal" onClick={(event) => event.target === event.currentTarget && setContractOpen(false)}>
+          <ContractRadarSheet report={contractReport} t={t} onClose={() => setContractOpen(false)} />
+        </div>
+      )}
     </div>
   );
 
@@ -1184,6 +1222,99 @@ export function App() {
     if (tracing && selected && trace.edges.size && !trace.edges.has(`${edge.from}>${edge.to}`)) return true;
     return false;
   }
+}
+
+function ContractRadarSheet({ report, t, onClose }: { report: ContractRadarReport; t: TFn; onClose: () => void }) {
+  const endpoints = new Map([...report.clients, ...report.routes].map((endpoint) => [endpoint.id, endpoint]));
+  const errors = report.issues.filter((issue) => issue.severity === 'error');
+  const info = report.issues.filter((issue) => issue.severity !== 'error');
+  const stats = [
+    ['contract.stat.clients', report.summary.clientCalls],
+    ['contract.stat.routes', report.summary.serverRoutes],
+    ['contract.stat.matches', report.summary.matches],
+    ['contract.stat.covered', report.summary.routesWithTests],
+    ['contract.stat.errors', errors.length],
+    ['contract.stat.unknowns', report.summary.unknowns]
+  ] as const;
+
+  return (
+    <div className="sheet contract-sheet" role="dialog" aria-modal="true" aria-labelledby="contract-radar-title">
+      <div className="contract-head">
+        <div>
+          <h2 id="contract-radar-title">{t('contract.title')}</h2>
+          <p>{t('contract.subtitle')}</p>
+        </div>
+        <button className="btn" onClick={onClose}>{t('contract.close')}</button>
+      </div>
+
+      <div className="contract-stats">
+        {stats.map(([label, value]) => (
+          <div className="contract-stat" key={label}>
+            <b className={label === 'contract.stat.errors' && value > 0 ? 'hot' : ''}>{value}</b>
+            <span>{t(label)}</span>
+          </div>
+        ))}
+      </div>
+
+      <section className="contract-section">
+        <h3>{t('contract.errors')}</h3>
+        {errors.length === 0 ? <div className="contract-clean">{t('contract.clean')}</div> : (
+          <div className="contract-list">
+            {errors.map((issue, index) => {
+              const endpoint = endpoints.get(issue.endpointId);
+              return (
+                <article className="contract-issue error" key={`${issue.endpointId}:${issue.kind}:${index}`}>
+                  <div className="contract-issue-top">
+                    <span className="chip hot">{t(`contract.issue.${issue.kind}`)}</span>
+                    {endpoint && <code>{endpoint.method} {endpoint.path}</code>}
+                  </div>
+                  <p>{issue.message}</p>
+                  {endpoint && <small>{endpoint.file}:{endpoint.line} · {endpoint.framework}</small>}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="contract-section contract-columns">
+        <div>
+          <h3>{t('contract.unknowns')}</h3>
+          {report.unknowns.length === 0 ? <div className="small-empty">{t('common.none')}</div> : (
+            <div className="contract-list compact">
+              {report.unknowns.map((item, index) => (
+                <article className="contract-issue unknown" key={`${item.file}:${item.line}:${index}`}>
+                  <code>{item.file}:{item.line}</code>
+                  <p>{item.reason}</p>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+        <div>
+          <h3>{t('contract.info')}</h3>
+          {info.length === 0 ? <div className="small-empty">{t('common.none')}</div> : (
+            <div className="contract-list compact">
+              {info.map((issue, index) => {
+                const endpoint = endpoints.get(issue.endpointId);
+                return (
+                  <article className="contract-issue info" key={`${issue.endpointId}:${index}`}>
+                    <code>{endpoint ? `${endpoint.method} ${endpoint.path}` : issue.kind}</code>
+                    <p>{issue.message}</p>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <details className="contract-limitations">
+        <summary>{t('contract.limitations')}</summary>
+        <ul>{report.limitations.map((item) => <li key={item}>{item}</li>)}</ul>
+      </details>
+    </div>
+  );
 }
 
 function LoadingMark({ message }: { message: string }) {

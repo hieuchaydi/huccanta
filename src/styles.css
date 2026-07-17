@@ -617,6 +617,115 @@ pre {
   margin: 0;
   font-size: 17px;
 }
+.contract-sheet {
+  width: min(980px, 100%);
+  gap: 16px;
+}
+.contract-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.contract-head p {
+  margin: 5px 0 0;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+}
+.contract-stats {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+.contract-stat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-2);
+}
+.contract-stat b {
+  color: var(--ink);
+  font: 750 22px/1 var(--mono);
+}
+.contract-stat b.hot { color: var(--tangle); }
+.contract-stat span {
+  color: var(--ink-faint);
+  font: 10.5px/1.3 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.contract-section h3 {
+  margin: 0 0 8px;
+  color: var(--ink-faint);
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.contract-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.contract-list.compact {
+  max-height: 220px;
+  overflow: auto;
+}
+.contract-issue {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.contract-issue.error { border-left-color: var(--tangle); }
+.contract-issue.unknown { border-left-color: var(--warn); }
+.contract-issue.info { border-left-color: var(--accent); }
+.contract-issue-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.contract-issue code,
+.contract-issue small {
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.contract-issue p {
+  margin: 6px 0;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.contract-clean {
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--clean) 35%, var(--line));
+  border-radius: 8px;
+  background: var(--clean-soft);
+  color: var(--clean);
+  font-size: 13px;
+  font-weight: 650;
+}
+.contract-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.contract-limitations {
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+.contract-limitations summary { cursor: pointer; }
+.contract-limitations ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  line-height: 1.55;
+}
 .add-grid {
   display: grid;
   grid-template-columns: 180px 1fr;
@@ -949,6 +1058,12 @@ textarea {
     padding: 10px 14px 14px;
     background: var(--surface);
     border-top: 1px solid var(--line);
+  }
+  .contract-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .contract-columns {
+    grid-template-columns: 1fr;
   }
 }
 

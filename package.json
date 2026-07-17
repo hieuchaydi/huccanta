@@ -9,7 +9,8 @@
     "node": ">=22"
   },
   "bin": {
-    "huccanta-mcp": "bin/huccanta-mcp.mjs"
+    "huccanta-mcp": "bin/huccanta-mcp.mjs",
+    "huccanta-contract": "bin/huccanta-contract.mjs"
   },
   "scripts": {
     "dev": "concurrently \"npm:dev:server\" \"npm:dev:web\"",
@@ -18,6 +19,7 @@
     "build": "tsc -b && vite build",
     "start": "tsx server/index.ts",
     "mcp": "tsx server/mcp.ts",
+    "contract:check": "tsx server/contractCli.ts --allow-unknown .",
     "serve": "npm run build && npm run start",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run"

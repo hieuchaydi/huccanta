@@ -1,6 +1,6 @@
 # Huccanta
 
-A local-first codebase doctor for JavaScript/TypeScript. **Available (1.0)**: a function/call map plus hotspot detection in the UI (multi-language); and — via **MCP tools + HTTP API** — an **Import Health Report** (unused/broken files, with evidence), a **File-level dependency graph** (import edges + dependency cycles, with a Function | File toggle) and a **Refactor Sandbox** (simulate deleting a file/function → blast radius, without touching files). Runs entirely on your machine. Still heading toward the full *repo doctor* — see the **Vision: Repo Doctor** section below.
+A local-first codebase doctor for JavaScript/TypeScript. Beyond function/file maps and the Refactor Sandbox, the source now includes **Contract Radar** (connect HTTP clients to Express/Fastify/Nest/Next routes; check schemas, auth, statuses, and test coverage) and **Change Contract** (verify before/after snapshots against a policy, returning PASS/FAIL/UNKNOWN plus a fingerprint). Use them from the UI, MCP, HTTP APIs, or the CI CLI; everything runs locally.
 
 **[Tiếng Việt](README.md)** · **English**
 
@@ -25,9 +25,11 @@ In short: AI-codemap answers *"what does my code look like"*; Huccanta answers *
 **Differentiating (sellable) features:**
 
 - **Refactor Sandbox** *(shipped)* — simulate deleting a file/function → see exactly what breaks + metric deltas, before you commit. No AI-codemap tool lets you "try a refactor".
+- **Contract Radar** *(shipped)* — connect layers that never import each other: `fetch`/Axios instances ↔ Express/Fastify plugins/NestJS/Next routes; catch endpoint, request/response field, auth, and status drift plus routes without HTTP tests.
+- **Change Contract** *(shipped)* — an agent declares allowed removals and regression budgets; Huccanta verifies before/after and emits a fail-closed structural certificate with a fingerprint.
 - **Evidence-based safe-delete** *(shipped)* — clean up dead code safely (confidence ≤ 85%, never a reckless "dead" call).
 - **Local-first** — sellable to security-conscious / regulated teams that cannot send code to a cloud LLM.
-- **Guardrail for AI-written code** *(direction)* — an agent calls Huccanta over MCP to self-check its diff (phantom imports, missing routes, new cycles) — timely for Copilot/Cursor.
+- **Guardrail for AI-written code** *(core shipped)* — agents call `contract_radar` + `verify_change` over MCP to self-check phantom routes/imports and new cycles.
 - **CI gate** *(direction)* — block PRs that regress structure (new cycle, god-node).
 
 ## Overview
@@ -119,6 +121,8 @@ Tools ([server/mcp.ts](server/mcp.ts)):
 | `import_health` | **(Repo Doctor, JS/TS)** File-level import health report: possibly-unused files (with evidence + confidence), entry points, broken relative imports, stats. |
 | `file_graph` | **(Repo Doctor Phase 2, JS/TS)** File-level dependency graph: node = file, edge = real import; flags file dependency cycles, classifies entry/normal/orphan, stats. |
 | `simulate_change` | **(Refactor Sandbox)** Simulate deleting a file/function without touching the filesystem → blast radius (broken callers, newly-orphaned functions, affected tests) + metric deltas (cycles, hotspots, fan-out). |
+| `contract_radar` | **(JS/TS)** Connects HTTP clients to Express/Fastify/Nest/Next routes; reports route/method/schema/auth/status drift, test coverage, no-local-consumer routes, and dynamic unknowns. |
+| `verify_change` | **(Change Contract, JS/TS)** Compares `beforeFiles`/`afterFiles` against allow-lists and regression budgets; returns PASS/FAIL/UNKNOWN, evidence, and a SHA-256 fingerprint. |
 
 Configure it in an MCP client:
 
@@ -129,6 +133,19 @@ Configure it in an MCP client:
   }
 }
 ```
+
+## CI contract gate
+
+Contract Radar ships a CLI with real exit codes for pull-request gates:
+
+```bash
+npx huccanta-contract .                         # strict: errors or unknowns fail
+npx huccanta-contract --allow-unknown .         # block definite errors only
+npx huccanta-contract --before base --after head --policy contract-policy.json
+```
+
+This repository runs `npm run contract:check` in GitHub Actions. The change gate reuses the
+`verify_change` core; its fingerprint binds the exact snapshots and policy that were checked.
 
 ## Vision: Repo Doctor
 
@@ -149,7 +166,9 @@ Plus a **missing-code detector**: unresolved imports; packages imported but not 
 - ✅ **Phase 1 · Import Health Report** *(shipped — `import_health` tool + `POST /api/import-health`)* — entry / possibly-unused files (confidence + evidence); unresolved imports (assets ignored); stats. Based on ts-morph's real import/export resolution.
 - ✅ **Phase 2 · File-level graph** *(shipped — `file_graph` tool + `POST /api/file-graph` + a **Function | File** toggle in the UI)* — node = file, edge = real import/export (ts-morph, no name-based guessing); flags **file dependency cycles** (circular imports) and classifies entry/normal/orphan. The **Contract** mode (route/OpenAPI/DB) is left for a later phase.
 - ✅ **Phase 3 · Simulate delete (Refactor Sandbox)** *(shipped — `simulate_change` tool + `POST /api/simulate`)* — drop nodes from a shadow graph, list broken callers + newly-orphaned functions + affected tests, recompute cycles/fan-in-out. *(Built before Phase 2 as the flagship differentiator.)*
-- **Phase 4 · Test/runtime overlay** — declare a command (e.g. `npm test`), then overlay the runtime trace onto the static graph.
+- ✅ **Phase 4 · Contract Radar** *(shipped — UI + `contract_radar` + `POST /api/contract-radar` + CI CLI)* — connect HTTP clients to route source, check schema/auth/status drift, and overlay HTTP test observations.
+- ✅ **Phase 5 · Change Contract** *(shipped — `verify_change` + `POST /api/change-contract`)* — verify patch intent with structural deltas and a fail-closed policy.
+- **Phase 6 · Test/runtime overlay** — declare a command (e.g. `npm test`), then overlay the runtime trace onto the static graph.
 
 **Non-goals:** no race to 30 languages · no Neo4j platform · no generic AI chatbot · no mysterious "health score" without evidence · no "dead because fan-in is 0" · no prettier-3D-graph race.
 
@@ -164,6 +183,9 @@ src/
   i18n.ts        Vietnamese/English dictionaries + translator
 server/
   analyze.ts     Multi-language entry: split JS/TS ↔ tree-sitter, merge + score
+  contractRadar.ts  Connect HTTP client calls ↔ backend routes from JS/TS source
+  changeContract.ts Verify before/after snapshots against policy + fingerprint
+  contractCli.ts    Fail-closed CLI for CI/PR gates
   treesitter.ts  tree-sitter parser (Python/Java/Go/C/C++/C#) → graph
   index.ts       Local Express API; serves dist/ in production
   db.ts          Save projects to SQLite (node:sqlite)
@@ -171,8 +193,9 @@ server/
   mcp.ts         MCP server (stdio) exposing the analyzer to AI agents
 bin/
   huccanta-mcp.mjs   `npx huccanta-mcp <folder>` — run the MCP server from any project
+  huccanta-contract.mjs  Contract gate command for CI
 tests/
-  analyzer.test.ts, multilang.test.ts
+  analyzer.test.ts, multilang.test.ts, contractRadar.test.ts, changeContract.test.ts
 ```
 
 ## Tech

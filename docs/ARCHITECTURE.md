@@ -64,7 +64,10 @@ UI (React/Vite, SVG) ──/api (proxy dev, cùng cổng ở prod)──▶ Anal
 | [server/importHealth.ts](server/importHealth.ts) | **Repo Doctor GĐ 1** — `importHealthReport(files)`: sức khoẻ import mức file. Dùng `collectFileDeps` rồi áp *chính sách* verdict/bằng chứng. |
 | [server/fileGraph.ts](server/fileGraph.ts) | **Repo Doctor GĐ 2** — `fileGraphReport(files)`: đồ thị mức file (node=file, cạnh=import thật) + Tarjan SCC bắt vòng phụ thuộc + phân loại entry/normal/orphan. Dùng `collectFileDeps`. |
 | [server/simulate.ts](server/simulate.ts) | **Refactor Sandbox (GĐ 3)** — `simulateChange(files, change)`: giả lập xóa file/hàm trên đồ thị bóng → blast radius + delta metric. |
-| [server/mcp.ts](server/mcp.ts) | MCP server (stdio); tool `analyze_code`/`get_function` (đa ngôn ngữ) + `import_health` + `simulate_change`. |
+| [server/contractRadar.ts](server/contractRadar.ts) | **Contract Radar** — nối HTTP client với Express/Fastify/Nest/Next route; kiểm path/method/schema/auth/status/test coverage. |
+| [server/changeContract.ts](server/changeContract.ts) | **Change Contract** — so snapshot trước/sau theo policy fail-closed, phát evidence + SHA-256 fingerprint. |
+| [server/contractCli.ts](server/contractCli.ts) | CI gate cho Contract Radar hoặc Change Contract; exit code 1 khi vi phạm/unknown chưa waiver. |
+| [server/mcp.ts](server/mcp.ts) | MCP server (stdio); expose analyzer, repo doctor, `contract_radar` và `verify_change`. |
 | [bin/huccanta-mcp.mjs](bin/huccanta-mcp.mjs) | Bin cho packet: `npx huccanta-mcp <folder>`. |
 | [tests/analyzer.test.ts](tests/analyzer.test.ts), [tests/multilang.test.ts](tests/multilang.test.ts) | Unit test JS/TS + đa ngôn ngữ (`analyzeProject`). |
 
@@ -118,6 +121,33 @@ UI (React/Vite, SVG) ──/api (proxy dev, cùng cổng ở prod)──▶ Anal
 - **Tách lõi dùng chung**: `collectFileDeps(files)` trong `moduleGraph.ts` dựng đồ thị phụ thuộc thô (targets/unresolved/exports/shebang/parseError mỗi file) bằng đúng cơ chế resolve của Import Health. `importHealthReport` và `fileGraphReport` **cùng gọi** hàm này — đừng để hai bên trôi lệch. `moduleGraph.ts` giữ *dữ liệu*; verdict/bằng chứng là *chính sách* riêng của Import Health.
 - `fileGraphReport`: node = file (kể cả file parse-error, khi đó không có cạnh ra), cạnh = import thật (bỏ self-edge nhưng self-import vẫn đánh `inCycle`). **Tarjan SCC** trên đồ thị file → `inCycle` (SCC size>1 hoặc self-loop) + `edge.cycle`. `kind`: `entry` (theo `entryReason`), `orphan` (không entry & `importedBy===0`), else `normal`. Output đã **sort** ổn định (test so trực tiếp).
 - **Server-only** (ts-morph/`node:*`) — KHÔNG import từ `src/` client. UI ([src/App.tsx](src/App.tsx)) gọi `/api/file-graph`, rồi `fileGraphToGraph` map `FileGraph`→`Graph` để tái dùng layout + renderer SVG; state `viewMode` chọn `activeGraph` (mức hàm hay mức file), còn session/baseline/save vẫn bám graph mức hàm. File-mode chỉ khả dụng khi có `sourceFiles` trên máy (quét Git lưu server-side nên nút File bị vô hiệu).
+
+### Contract Radar ([server/contractRadar.ts](server/contractRadar.ts))
+
+- Chỉ JS/TS, chạy local bằng ts-morph in-memory. Extract client `fetch`/Axios instance và server route
+  Express/Fastify plugin/NestJS/Next App Router rồi match method + path; hiểu param `:id`, Next
+  `[id]`, template `${expr}` và wildcard.
+- Sau khi path/method khớp, suy luận request/response fields, auth và status từ object/property access,
+  middleware/decorator và response calls. HTTP calls trong test/Supertest được phủ lên route thành
+  `coveredBy`; route chưa test là warning.
+- Router mount được ghép prefix khi symbol receiver resolve được, kể cả default import xuyên file.
+- URL/method/path động và file parse lỗi phải đi vào `unknowns`; **không được đoán** rồi báo
+  missing giả. `no-local-consumer` chỉ là info, không phải dead-code verdict.
+- Lõi dùng chung cho `POST /api/contract-radar` và MCP `contract_radar`. Đặc tả chi tiết:
+  [docs/specs/contract-radar.md](specs/contract-radar.md).
+- UI gọi endpoint từ nút **Contract**; `huccanta-contract` và `npm run contract:check` dùng cùng report
+  để gate CI. Strict mode fail cả error lẫn unknown; `--allow-unknown` là waiver tường minh.
+
+### Change Contract ([server/changeContract.ts](server/changeContract.ts))
+
+- Nhận hai snapshot JS/TS + policy (allow removals, preserve targets, regression budgets), tái dùng
+  call graph, File Graph và Import Health để dựng structural delta.
+- Trạng thái tổng theo thứ tự `fail > unknown > pass`; chỉ `pass` mới có `accepted=true`.
+  Parse thiếu bằng chứng luôn fail-closed thành `unknown`.
+- Fingerprint SHA-256 deterministic ràng buộc snapshot đã canonicalize với policy; đây không phải
+  chữ ký số hay formal proof.
+- Lõi dùng chung cho `POST /api/change-contract` và MCP `verify_change`. Đặc tả chi tiết:
+  [docs/specs/change-contract.md](specs/change-contract.md).
 
 ## Kiểm thử MCP nhanh
 

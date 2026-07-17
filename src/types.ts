@@ -140,3 +140,190 @@ export interface SimulationResult {
   };
   summary: string[]; // tóm tắt dễ đọc (blast radius + delta)
 }
+
+// ---- Change Contract: xác minh snapshot trước/sau theo ý định thay đổi đã khai báo ----
+export type ContractStatus = 'pass' | 'fail' | 'unknown';
+
+export interface ChangeContractPolicy {
+  name?: string;
+  allow?: {
+    removedFiles?: string[];
+    removedFunctions?: string[];
+  };
+  preserve?: {
+    files?: string[];
+    functions?: string[];
+  };
+  limits?: {
+    maxNewUnresolvedImports?: number;
+    maxNewFilesInCycles?: number;
+    maxNewFunctionsInCycles?: number;
+    maxNewHotspots?: number;
+  };
+}
+
+export interface NormalizedChangeContractPolicy {
+  name: string;
+  allow: {
+    removedFiles: string[];
+    removedFunctions: string[];
+  };
+  preserve: {
+    files: string[];
+    functions: string[];
+  };
+  limits: {
+    maxNewUnresolvedImports: number;
+    maxNewFilesInCycles: number;
+    maxNewFunctionsInCycles: number;
+    maxNewHotspots: number;
+  };
+}
+
+export type ContractCheckId =
+  | 'analysis-complete'
+  | 'removed-files-declared'
+  | 'removed-functions-declared'
+  | 'preserved-files-exist'
+  | 'preserved-functions-exist'
+  | 'unresolved-import-budget'
+  | 'file-cycle-budget'
+  | 'function-cycle-budget'
+  | 'hotspot-budget';
+
+export interface ContractCheck {
+  id: ContractCheckId;
+  status: ContractStatus;
+  summary: string;
+  evidence: string[];
+}
+
+export interface ContractMetrics {
+  files: number;
+  functions: number;
+  unresolvedImports: number;
+  filesInCycles: number;
+  functionsInCycles: number;
+  hotspots: number;
+}
+
+export interface ChangeContractResult {
+  schemaVersion: 1;
+  status: ContractStatus;
+  accepted: boolean;
+  fingerprint: string;
+  inputDigests: {
+    before: string;
+    after: string;
+    policy: string;
+  };
+  policy: NormalizedChangeContractPolicy;
+  changes: {
+    files: {
+      added: string[];
+      removed: string[];
+      modified: string[];
+    };
+    functions: {
+      added: string[];
+      removed: string[];
+    };
+    unresolvedImports: {
+      added: string[];
+      resolved: string[];
+    };
+    filesEnteringCycles: string[];
+    functionsEnteringCycles: string[];
+    newHotspots: string[];
+  };
+  metrics: {
+    before: ContractMetrics;
+    after: ContractMetrics;
+  };
+  checks: ContractCheck[];
+  limitations: string[];
+}
+
+// ---- Contract Radar: nối HTTP client calls với backend routes từ source thật ----
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS' | 'HEAD' | 'ANY';
+export type ContractConfidence = 'exact' | 'pattern';
+export type HttpContractFramework = 'fetch' | 'axios' | 'express' | 'fastify' | 'nest' | 'next';
+export type HttpContractAuth = 'present' | 'required' | 'absent' | 'unknown';
+
+export interface HttpContractDetails {
+  requestFields: string[];
+  responseFields: string[];
+  auth: HttpContractAuth;
+  statuses: number[];
+}
+
+export interface HttpContractEndpoint {
+  id: string;
+  side: 'client' | 'server';
+  method: HttpMethod;
+  path: string;
+  file: string;
+  line: number;
+  framework: HttpContractFramework;
+  confidence: ContractConfidence;
+  contract: HttpContractDetails;
+  coveredBy: string[];
+}
+
+export interface HttpContractObservation {
+  id: string;
+  method: Exclude<HttpMethod, 'ANY'>;
+  path: string;
+  file: string;
+  line: number;
+  source: 'test';
+}
+
+export interface HttpContractIssue {
+  kind:
+    | 'missing-route'
+    | 'method-mismatch'
+    | 'request-schema-mismatch'
+    | 'response-schema-mismatch'
+    | 'missing-auth'
+    | 'status-mismatch'
+    | 'route-without-test'
+    | 'no-local-consumer';
+  severity: 'error' | 'warning' | 'info';
+  endpointId: string;
+  message: string;
+  candidates: string[];
+}
+
+export interface ContractUnknown {
+  side: 'client' | 'server';
+  file: string;
+  line: number;
+  expression: string;
+  reason: string;
+}
+
+export interface ContractRadarReport {
+  summary: {
+    clientCalls: number;
+    serverRoutes: number;
+    matches: number;
+    missingRoutes: number;
+    methodMismatches: number;
+    requestSchemaMismatches: number;
+    responseSchemaMismatches: number;
+    missingAuth: number;
+    statusMismatches: number;
+    routesWithTests: number;
+    routesWithoutTests: number;
+    noLocalConsumers: number;
+    unknowns: number;
+  };
+  clients: HttpContractEndpoint[];
+  routes: HttpContractEndpoint[];
+  observations: HttpContractObservation[];
+  matches: { clientId: string; routeId: string }[];
+  issues: HttpContractIssue[];
+  unknowns: ContractUnknown[];
+  limitations: string[];
+}
