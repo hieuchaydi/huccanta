@@ -6,7 +6,7 @@
 ## 0. Bối cảnh & mục tiêu
 
 Hôm nay Huccanta chỉ có **một mức đồ thị**: mức **hàm** (`analyzeProject` → `Graph` gồm node = hàm,
-edge = lời gọi). Lộ trình Repo Doctor (README, mục *Lộ trình*) cần thêm **mức file**:
+edge = lời gọi). Lộ trình kiểm tra codebase (README, mục *Lộ trình*) cần thêm **mức file**:
 
 - Node = **file**; edge = **quan hệ import/export THẬT giữa các file** (không đoán theo tên hàm).
 - Chỉ **JS/TS** (để chính xác) — giống GĐ 1 Import Health. File ngôn ngữ khác bị bỏ qua.
@@ -178,7 +178,7 @@ server.registerTool(
   {
     title: 'File dependency graph',
     description:
-      'GĐ 2 Repo Doctor (chỉ JS/TS): đồ thị phụ thuộc MỨC FILE dựa trên import/export THẬT ' +
+      'Đồ thị file (chỉ JS/TS): đồ thị phụ thuộc MỨC FILE dựa trên import/export THẬT ' +
       '(ts-morph, không đoán theo tên). Node = file, cạnh = quan hệ import. Trả node (entry/normal/orphan, ' +
       'imports/importedBy/exports/loc, inCycle), cạnh (đánh dấu cycle) và thống kê (vòng phụ thuộc, orphan…). ' +
       'Nhận "path" (thư mục) hoặc "files".',

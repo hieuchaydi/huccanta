@@ -185,4 +185,148 @@ def active(items):
       edge.from === 'receiver.go#Service.Load' && edge.to === 'receiver.go#Service.normalize'
     )?.resolution).toBe('exact');
   });
+
+  it('resolve Python import module và alias module xuyên file', async () => {
+    const graph = await analyzeProject([
+      { path: 'pkg/__init__.py', content: '' },
+      { path: 'pkg/helpers.py', content: 'def normalize(value):\n    return value.strip()\n' },
+      {
+        path: 'app.py',
+        content: `import pkg.helpers
+import pkg.helpers as tools
+
+def direct(value):
+    return pkg.helpers.normalize(value)
+
+def aliased(value):
+    return tools.normalize(value)
+`
+      }
+    ]);
+
+    expect(graph.edges.find((edge) =>
+      edge.from === 'app.py#direct' && edge.to === 'pkg/helpers.py#normalize'
+    )?.resolution).toBe('import');
+    expect(graph.edges.find((edge) =>
+      edge.from === 'app.py#aliased' && edge.to === 'pkg/helpers.py#normalize'
+    )?.resolution).toBe('import');
+  });
+
+  it('resolve from-import, alias symbol và relative import theo module scope Python', async () => {
+    const graph = await analyzeProject([
+      { path: 'src/pkg/__init__.py', content: '' },
+      { path: 'src/pkg/helpers.py', content: 'def normalize(value):\n    return value.strip()\n' },
+      {
+        path: 'src/pkg/service.py',
+        content: `from . import helpers
+from .helpers import normalize as clean
+
+def through_module(value):
+    return helpers.normalize(value)
+
+def through_symbol(value):
+    return clean(value)
+`
+      }
+    ]);
+
+    expect(graph.edges.find((edge) =>
+      edge.from === 'src/pkg/service.py#through_module' && edge.to === 'src/pkg/helpers.py#normalize'
+    )?.resolution).toBe('import');
+    expect(graph.edges.find((edge) =>
+      edge.from === 'src/pkg/service.py#through_symbol' && edge.to === 'src/pkg/helpers.py#normalize'
+    )?.resolution).toBe('import');
+  });
+
+  it('resolve class được from-import nhưng không suy type cho instance Python', async () => {
+    const graph = await analyzeProject([
+      { path: 'pkg/__init__.py', content: '' },
+      {
+        path: 'pkg/models.py',
+        content: `class Service:
+    def run(self):
+        return 1
+`
+      },
+      {
+        path: 'app.py',
+        content: `from pkg.models import Service
+
+def static_call():
+    return Service.run()
+
+def instance_call(service):
+    return service.run()
+`
+      }
+    ]);
+
+    expect(graph.edges.find((edge) =>
+      edge.from === 'app.py#static_call' && edge.to === 'pkg/models.py#Service.run'
+    )?.resolution).toBe('import');
+    expect(graph.edges.some((edge) => edge.from === 'app.py#instance_call')).toBe(false);
+  });
+
+  it('ưu tiên định nghĩa module-local khi trùng tên imported binding', async () => {
+    const graph = await analyzeProject([
+      { path: 'pkg/__init__.py', content: '' },
+      { path: 'pkg/helpers.py', content: 'def normalize():\n    return 1\n' },
+      {
+        path: 'app.py',
+        content: `from pkg.helpers import normalize
+
+def normalize():
+    return 2
+
+def run():
+    return normalize()
+`
+      }
+    ]);
+
+    expect(graph.edges.find((edge) => edge.from === 'app.py#run')?.to).toBe('app.py#normalize');
+    expect(graph.edges.find((edge) => edge.from === 'app.py#run')?.resolution).toBe('same-file');
+  });
+
+  it('không nối from-import mơ hồ giữa submodule và symbol cùng tên', async () => {
+    const graph = await analyzeProject([
+      {
+        path: 'pkg/__init__.py',
+        content: `class helpers:
+    def run(self):
+        return 1
+`
+      },
+      {
+        path: 'pkg/helpers.py',
+        content: 'def run():\n    return 2\n'
+      },
+      {
+        path: 'app.py',
+        content: `from pkg import helpers
+
+def start():
+    return helpers.run()
+`
+      }
+    ]);
+
+    expect(graph.edges.some((edge) => edge.from === 'app.py#start')).toBe(false);
+  });
+
+  it('không coi bare call trong Python class là self.method', async () => {
+    const graph = await analyzeProject([
+      {
+        path: 'service.py',
+        content: `class Service:
+    def run(self):
+        return helper()
+    def helper(self):
+        return 1
+`
+      }
+    ]);
+
+    expect(graph.edges.some((edge) => edge.from === 'service.py#Service.run')).toBe(false);
+  });
 });

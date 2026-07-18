@@ -2,7 +2,7 @@
   "name": "huccanta-code-flow-visualizer",
   "private": true,
   "version": "1.0.0",
-  "description": "X-ray your codebase before you touch it — a local codebase doctor for JavaScript/TypeScript.",
+  "description": "X-ray your codebase before you touch it — a local codebase checker for JavaScript/TypeScript.",
   "license": "MIT",
   "type": "module",
   "engines": {

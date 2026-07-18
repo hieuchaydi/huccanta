@@ -1,6 +1,6 @@
 # Huccanta
 
-A local-first codebase doctor for JavaScript/TypeScript. Beyond function/file maps and the Refactor Sandbox, the source now includes **Contract Radar** (connect HTTP clients to Express/Fastify/Nest/Next routes; check schemas, auth, statuses, and test coverage) and **Change Contract** (verify before/after snapshots against a policy, returning PASS/FAIL/UNKNOWN plus a fingerprint). Use them from the UI, MCP, HTTP APIs, or the CI CLI; everything runs locally.
+A local-first codebase checker for JavaScript/TypeScript. Beyond function/file maps and the Refactor Sandbox, the source now includes **Contract Radar** (connect HTTP clients to Express/Fastify/Nest/Next routes; check schemas, auth, statuses, and test coverage) and **Change Contract** (verify before/after snapshots against a policy, returning PASS/FAIL/UNKNOWN plus a fingerprint). Use them from the UI, MCP, HTTP APIs, or the CI CLI; everything runs locally.
 
 **[Tiếng Việt](README.md)** · **English**
 
@@ -52,8 +52,9 @@ the contract decides whether a patch is acceptable**.
 Huccanta uses AST evidence, not an LLM-generated diagram: ts-morph resolves JS/TS symbols; the
 tree-sitter path records grammar node types, owner/class, receiver and source location. A call is
 connected only when the owner-qualified symbol or a unique same-file symbol proves the target.
-Bare-name cross-file calls and ambiguous calls are omitted instead of guessed. `GraphEdge.resolution`
-records whether the evidence was `exact` or `same-file`.
+Bare-name cross-file calls and ambiguous calls are omitted instead of guessed. Python also resolves
+explicit module-scope imports, aliases, and relative imports. `GraphEdge.resolution` records whether
+the evidence was `exact`, `same-file`, or `import`.
 
 Contract Radar then checks the boundary that import graphs cannot see: HTTP method/path,
 request/response fields, Authorization, statuses and test observations. Change Contract compares
@@ -72,7 +73,7 @@ Click a node to see the real code, its callers/callees, why it was flagged and h
 
 Code can come from: pasted source, a local folder, or a Git repo URL to clone and scan. Scanned projects can be saved for quick reopening.
 
-**Supported languages:** JavaScript/TypeScript (via ts-morph, with accurate symbol resolution) and **Python, Java, Go, C/C++, C#** (via tree-sitter). Tree-sitter languages use a conservative static resolver: qualified owner/receiver or a unique same-file symbol; bare-name cross-file calls and ambiguous calls are omitted instead of guessed.
+**Supported languages:** JavaScript/TypeScript (via ts-morph, with accurate symbol resolution) and **Python, Java, Go, C/C++, C#** (via tree-sitter). Tree-sitter languages use a conservative static resolver: qualified owner/receiver or a unique same-file symbol; Python additionally follows explicit module-scope imports and aliases. Bare-name cross-file calls and ambiguous calls are omitted instead of guessed.
 
 ## Requirements
 
@@ -146,8 +147,8 @@ Tools ([server/mcp.ts](server/mcp.ts)):
 |---|---|
 | `analyze_code` | Scans a `path` (local folder) or inline `files`; returns an overview (functions, calls, hotspots, cycles) plus ranked hotspots. When launched with a folder (`npx huccanta-mcp <folder>`), the arguments can be omitted. |
 | `get_function` | Detail of one function by `id` (`file#name`): code, callers, callees, issues. |
-| `import_health` | **(Repo Doctor, JS/TS)** File-level import health report: possibly-unused files (with evidence + confidence), entry points, broken relative imports, stats. |
-| `file_graph` | **(Repo Doctor Phase 2, JS/TS)** File-level dependency graph: node = file, edge = real import; flags file dependency cycles, classifies entry/normal/orphan, stats. |
+| `import_health` | **(Repository checks, JS/TS)** File-level import health report: possibly-unused files (with evidence + confidence), entry points, broken relative imports, stats. |
+| `file_graph` | **(File graph, JS/TS)** File-level dependency graph: node = file, edge = real import; flags file dependency cycles, classifies entry/normal/orphan, stats. |
 | `simulate_change` | **(Refactor Sandbox)** Simulate deleting a file/function without touching the filesystem → blast radius (broken callers, newly-orphaned functions, affected tests) + metric deltas (cycles, hotspots, fan-out). |
 | `contract_radar` | **(JS/TS)** Connects HTTP clients to Express/Fastify/Nest/Next routes; reports route/method/schema/auth/status drift, test coverage, no-local-consumer routes, and dynamic unknowns. |
 | `verify_change` | **(Change Contract, JS/TS)** Compares `beforeFiles`/`afterFiles` against allow-lists and regression budgets; returns PASS/FAIL/UNKNOWN, evidence, and a SHA-256 fingerprint. |
@@ -178,8 +179,9 @@ This repository runs `npm run contract:check` in GitHub Actions. The change gate
 ## Reproducible benchmark
 
 Run `npm run benchmark` for a fixed six-language fixture (Python, Java, Go, C, C++, C#), ten measured
-iterations after one warm-up, with median and p95 timings. It also asserts seven labeled edges and
-four under-evidenced calls that must remain unresolved. This measures Huccanta's local parser and
+iterations after one warm-up, with median and p95 timings. It also asserts seven polyglot edges,
+three Python import edges, and five under-evidenced calls that must remain unresolved. This measures
+Huccanta's local parser and
 Contract Radar; it is not apples-to-apples with CodeGraph's self-reported agent-level benchmark. Keep parser
 speed, graph accuracy and agent token/tool reduction as separate metrics. The small ground-truth
 fixture is a regression guard, not a claim of 100% accuracy on real repositories.
@@ -192,10 +194,11 @@ fixture is a regression guard, not a claim of 100% accuracy on real repositories
    accepts `files/path` and does not depend on the DB. There is no graph or cloud database.
 3. **Roadmap:** shipped, hardening and next work—each with exit criteria—are tracked in
    [docs/ROADMAP.md](docs/ROADMAP.md), separate from product claims.
-4. **Python:** the AST resolver covers class owners, `self`, ambiguity guards and explicit Python
-   branch types. Cross-module import/alias resolution remains an openly documented limitation.
+4. **Python:** the AST resolver covers class owners, `self`, explicit module-scope imports/aliases,
+   relative imports, ambiguity guards and Python-specific branch types. Framework semantics and
+   arbitrary receiver type inference remain documented limitations.
 
-## Vision: Repo Doctor
+## Vision: evidence-based codebase checks
 
 > This is the **direction**, not shipped features. The sections above describe what runs today.
 > See [docs/ROADMAP.md](docs/ROADMAP.md) for exit criteria and the current Python scope.
@@ -217,6 +220,7 @@ Plus a **missing-code detector**: unresolved imports; packages imported but not 
 - ✅ **Phase 3 · Simulate delete (Refactor Sandbox)** *(shipped — `simulate_change` tool + `POST /api/simulate`)* — drop nodes from a shadow graph, list broken callers + newly-orphaned functions + affected tests, recompute cycles/fan-in-out. *(Built before Phase 2 as the flagship differentiator.)*
 - ✅ **Phase 4 · Contract Radar** *(shipped — UI + `contract_radar` + `POST /api/contract-radar` + CI CLI)* — connect HTTP clients to route source, check schema/auth/status drift, and overlay HTTP test observations.
 - ✅ **Phase 5 · Change Contract** *(shipped — `verify_change` + `POST /api/change-contract`)* — verify patch intent with structural deltas and a fail-closed policy.
+- 🚧 **Python semantic layer** — module-scope `import`, `from ... import`, aliases, and relative imports now resolve with `import` evidence; FastAPI/Flask/Django contracts and type inference remain next work.
 - **Phase 6 · Test/runtime overlay** — declare a command (e.g. `npm test`), then overlay the runtime trace onto the static graph.
 
 **Non-goals:** no race to 30 languages · no Neo4j platform · no generic AI chatbot · no mysterious "health score" without evidence · no "dead because fan-in is 0" · no prettier-3D-graph race.

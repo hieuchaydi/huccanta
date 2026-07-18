@@ -61,13 +61,13 @@ UI (React/Vite, SVG) ──/api (proxy dev, cùng cổng ở prod)──▶ Anal
 | [server/db.ts](server/db.ts) | SQLite: `listProjects`/`getProject`/`saveProject`/`deleteProject`. |
 | [server/scan.ts](server/scan.ts) | Duyệt thư mục/repo, lọc file nguồn, bỏ dir rác. |
 | [server/moduleGraph.ts](server/moduleGraph.ts) | **Lõi đồ thị phụ thuộc mức file** dùng chung — `collectFileDeps(files)` + hằng/helper (`normalizePath`, `entryReason`, regex JS/TS/asset). ts-morph in-memory FS. |
-| [server/importHealth.ts](server/importHealth.ts) | **Repo Doctor GĐ 1** — `importHealthReport(files)`: sức khoẻ import mức file. Dùng `collectFileDeps` rồi áp *chính sách* verdict/bằng chứng. |
-| [server/fileGraph.ts](server/fileGraph.ts) | **Repo Doctor GĐ 2** — `fileGraphReport(files)`: đồ thị mức file (node=file, cạnh=import thật) + Tarjan SCC bắt vòng phụ thuộc + phân loại entry/normal/orphan. Dùng `collectFileDeps`. |
+| [server/importHealth.ts](server/importHealth.ts) | **Kiểm tra import** — `importHealthReport(files)`: sức khoẻ import mức file. Dùng `collectFileDeps` rồi áp *chính sách* verdict/bằng chứng. |
+| [server/fileGraph.ts](server/fileGraph.ts) | **Đồ thị file** — `fileGraphReport(files)`: đồ thị mức file (node=file, cạnh=import thật) + Tarjan SCC bắt vòng phụ thuộc + phân loại entry/normal/orphan. Dùng `collectFileDeps`. |
 | [server/simulate.ts](server/simulate.ts) | **Refactor Sandbox (GĐ 3)** — `simulateChange(files, change)`: giả lập xóa file/hàm trên đồ thị bóng → blast radius + delta metric. |
 | [server/contractRadar.ts](server/contractRadar.ts) | **Contract Radar** — nối HTTP client với Express/Fastify/Nest/Next route; kiểm path/method/schema/auth/status/test coverage. |
 | [server/changeContract.ts](server/changeContract.ts) | **Change Contract** — so snapshot trước/sau theo policy fail-closed, phát evidence + SHA-256 fingerprint. |
 | [server/contractCli.ts](server/contractCli.ts) | CI gate cho Contract Radar hoặc Change Contract; exit code 1 khi vi phạm/unknown chưa waiver. |
-| [server/mcp.ts](server/mcp.ts) | MCP server (stdio); expose analyzer, repo doctor, `contract_radar` và `verify_change`. |
+| [server/mcp.ts](server/mcp.ts) | MCP server (stdio); expose analyzer, kiểm tra repo, `contract_radar` và `verify_change`. |
 | [bin/huccanta-mcp.mjs](bin/huccanta-mcp.mjs) | Bin cho packet: `npx huccanta-mcp <folder>`. |
 | [tests/analyzer.test.ts](tests/analyzer.test.ts), [tests/multilang.test.ts](tests/multilang.test.ts) | Unit test JS/TS + đa ngôn ngữ (`analyzeProject`). |
 
@@ -85,7 +85,9 @@ UI (React/Vite, SVG) ──/api (proxy dev, cùng cổng ở prod)──▶ Anal
 
 `parseTreeSitter`: mỗi grammar khai báo query định nghĩa/call và branch node type riêng. Resolver dựng
 owner/class, receiver và qualified symbol; chỉ phát cạnh khi là `exact` hoặc `same-file`.
-Call xuyên file chỉ có tên trần và symbol trùng tên nhưng không đủ owner/receiver evidence sẽ không phát cạnh. `GraphEdge.resolution`
+Riêng Python, import/alias tĩnh ở module scope và relative import được ánh xạ theo package path; cạnh xuyên
+module có `resolution: import`. Wildcard/dynamic/function-scope import và receiver chưa biết type không được
+đoán. Call xuyên file chỉ có tên trần và symbol trùng tên nhưng không đủ owner/receiver evidence sẽ không phát cạnh. `GraphEdge.resolution`
 cho phép UI/benchmark phân biệt mức bằng chứng thay vì coi mọi cạnh là như nhau.
 
 `analyzeGraph` (ngưỡng cố định — chỉnh ở đây nếu cần):
@@ -118,13 +120,13 @@ dùng regex node type chung. Đây là giới hạn evidence có chủ đích, k
 3. Thêm đuôi file vào `SOURCE_EXT` trong [server/scan.ts](server/scan.ts) và `JS_TS` regex KHÔNG được chứa nó.
 4. Viết query đúng field name của grammar — spike nhanh: `node -e` load wasm rồi `language.query(...)` (xem git history của các query hiện có làm mẫu). Thêm case vào [tests/multilang.test.ts](tests/multilang.test.ts).
 
-### Import Health / Repo Doctor GĐ 1 ([server/importHealth.ts](server/importHealth.ts))
+### Import Health / kiểm tra import ([server/importHealth.ts](server/importHealth.ts))
 
 - Dùng ts-morph **in-memory FS** (chỉ phân giải trong đám file input, không đụng `node_modules` host) → deterministic. **Path từ `getFilePath()` có `/` đầu** (vd `/src/a.ts`) — `normalizePath` phải bỏ `/` đầu để khớp key input, nếu không mọi record bị skip.
 - Bắt: import/export **tĩnh**, re-export, **dynamic `import()`**, **`require()`** (resolver tương đối tự viết `resolveRelative`), và **shebang** `#!` → entry. Parse lỗi = **syntactic diagnostics** (`program.getSyntacticDiagnostics`, KHÔNG tính lỗi type). CHƯA bắt: specifier động (biến/template string) và tham chiếu qua config/route (framework gọi động) → file như vậy vẫn có thể hiện `possibly-unused` **độ tin cậy thấp** (≤85, kèm bằng chứng), không phán "dead 100%".
 - Import tương đối tới **asset** (css/json/svg/ảnh… theo `ASSET_EXT`) KHÔNG tính là gãy; **bare package** (không tương đối) coi là phụ thuộc ngoài, bỏ qua. Chỉ module JS/TS tương đối không phân giải được = "gãy".
 
-### File Graph / Repo Doctor GĐ 2 ([server/fileGraph.ts](server/fileGraph.ts) + [server/moduleGraph.ts](server/moduleGraph.ts))
+### File Graph / đồ thị file ([server/fileGraph.ts](server/fileGraph.ts) + [server/moduleGraph.ts](server/moduleGraph.ts))
 
 - **Tách lõi dùng chung**: `collectFileDeps(files)` trong `moduleGraph.ts` dựng đồ thị phụ thuộc thô (targets/unresolved/exports/shebang/parseError mỗi file) bằng đúng cơ chế resolve của Import Health. `importHealthReport` và `fileGraphReport` **cùng gọi** hàm này — đừng để hai bên trôi lệch. `moduleGraph.ts` giữ *dữ liệu*; verdict/bằng chứng là *chính sách* riêng của Import Health.
 - `fileGraphReport`: node = file (kể cả file parse-error, khi đó không có cạnh ra), cạnh = import thật (bỏ self-edge nhưng self-import vẫn đánh `inCycle`). **Tarjan SCC** trên đồ thị file → `inCycle` (SCC size>1 hoặc self-loop) + `edge.cycle`. `kind`: `entry` (theo `entryReason`), `orphan` (không entry & `importedBy===0`), else `normal`. Output đã **sort** ổn định (test so trực tiếp).

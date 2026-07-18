@@ -1,6 +1,6 @@
 export type NodeLevel = 'ok' | 'warn' | 'hot';
 export type EdgeKind = 'call' | 'async' | 'recursive';
-export type EdgeResolution = 'exact' | 'same-file';
+export type EdgeResolution = 'exact' | 'same-file' | 'import';
 export type FixKind = 'tangle' | 'warn' | 'accent';
 export type IssueCode = 'cycle' | 'complexity' | 'fanOut' | 'fanIn';
 

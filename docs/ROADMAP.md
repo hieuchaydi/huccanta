@@ -44,7 +44,7 @@ Không gắn ngày giả khi chưa có capacity. Mỗi chặng dùng **exit crit
 | ✅ Đã có | Repo understanding | Function graph, File Graph, Import Health, Refactor Sandbox | Build/test xanh; evidence có source location |
 | ✅ Đã có | Change guardrails | Contract Radar + Change Contract qua UI/API/MCP/CLI/CI | `PASS/FAIL/UNKNOWN`, policy và fingerprint cùng dùng một core |
 | 🚧 Đang harden | Polyglot evidence | Resolver AST bảo thủ cho Python/Java/Go/C/C++/C# | Không nối bare-name xuyên file; benchmark ground-truth theo từng grammar |
-| Tiếp theo | Python semantic layer | Resolve `import`/`from ... import`, alias/module scope; FastAPI/Flask/Django contracts | Fixture nhiều file có precision/recall và không giảm guard ambiguity |
+| 🚧 Đang làm | Python semantic layer | Đã resolve `import`/`from ... import`, alias/relative import ở module scope; FastAPI/Flask/Django contracts còn tiếp | Fixture nhiều file giữ guard ambiguity; chỉ hoàn tất khi framework contracts có evidence |
 | Tiếp theo | Test/runtime overlay | Phủ call thực tế từ test/command lên static graph | Static-only/runtime-only/both có provenance và command fingerprint |
 | Sau đó | Contract sources | OpenAPI và DB/schema migration nối với client/route | Drift có source evidence; dynamic case đi vào `unknown` |
 
@@ -59,13 +59,17 @@ project”. Phần đã có:
 - định nghĩa hàm/method và owner class;
 - `self.method()` được resolve về đúng class với evidence `exact`;
 - call top-level duy nhất trong cùng file có evidence `same-file`;
+- `import`, `import ... as`, `from ... import`, alias và relative import ở module scope được resolve
+  xuyên file với evidence `import` khi module/symbol có đúng một đích;
+- package kiểu `src/` có `__init__.py` được ánh xạ cả tên package-relative và full path;
 - call tên trần xuyên file, receiver ngoài chưa biết type và tên mơ hồ đều để unresolved;
 - complexity dùng node type Python tường minh: `if/elif`, loop/comprehension, `while`, `except`,
   `match/case`, conditional expression và boolean operator.
 
 Phần **chưa có** và không được overclaim:
 
-- import graph/alias Python xuyên module;
+- wildcard import, import động và import nằm trong function/branch;
+- namespace package/source root không có `__init__.py` khi đường dẫn module không khớp trực tiếp;
 - type inference cho receiver bất kỳ;
 - decorator/framework semantics cho FastAPI, Flask và Django;
 - runtime dispatch, monkey patching và reflection.

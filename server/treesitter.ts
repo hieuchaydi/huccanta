@@ -173,8 +173,11 @@ function getQueries(config: LangConfig, language: Parser.Language) {
 
 interface DefRecord {
   node: GraphNode;
+  grammar: string;
   ownerName: string;
   selfReceiver: string;
+  moduleNames: string[];
+  moduleQualifiedName: string;
   calls: CallRecord[];
 }
 
@@ -182,6 +185,22 @@ interface CallRecord {
   name: string;
   receiver: string;
   explicitReceiver: boolean;
+}
+
+interface PythonModuleInfo {
+  primary: string;
+  aliases: string[];
+  isPackage: boolean;
+}
+
+interface PythonImportedBinding {
+  module: string;
+  symbol: string;
+}
+
+interface PythonScope {
+  modules: Map<string, string>;
+  imported: Map<string, PythonImportedBinding>;
 }
 
 function uniqueId(base: string, used: Set<string>, line: number) {
@@ -277,12 +296,207 @@ function normalizeQualified(value: string) {
   return value.replace(/\s+/g, '').replace(/::|->/g, '.').replace(/^this\./, '').replace(/^self\./, '');
 }
 
+function normalizeSourcePath(value: string) {
+  return value.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+|\/+$/g, '');
+}
+
+function withoutPythonExtension(value: string) {
+  return value.replace(/\.(?:py|pyi)$/i, '');
+}
+
+function pythonModuleInfos(files: SourceFileInput[]) {
+  const normalized = files.map((file) => normalizeSourcePath(file.path));
+  const packageDirs = new Set(
+    normalized
+      .filter((filePath) => /(?:^|\/)__init__\.(?:py|pyi)$/i.test(filePath))
+      .map((filePath) => filePath.replace(/\/__init__\.(?:py|pyi)$/i, ''))
+      .filter(Boolean)
+  );
+  const result = new Map<string, PythonModuleInfo>();
+
+  for (const file of files) {
+    const normalizedPath = normalizeSourcePath(file.path);
+    const rawParts = withoutPythonExtension(normalizedPath).split('/').filter(Boolean);
+    const isPackage = rawParts.at(-1) === '__init__';
+    const pathParts = isPackage ? rawParts.slice(0, -1) : rawParts;
+    const directories = isPackage ? pathParts : pathParts.slice(0, -1);
+    let packageStart = directories.length;
+    while (packageStart > 0 && packageDirs.has(directories.slice(0, packageStart).join('/'))) {
+      packageStart -= 1;
+    }
+    const full = pathParts.join('.');
+    const packageRelative = [
+      ...directories.slice(packageStart),
+      ...(isPackage ? [] : pathParts.slice(-1))
+    ].join('.');
+    const primary = packageRelative || full;
+    const aliases = [...new Set([primary, full].filter(Boolean))];
+    result.set(file.path, { primary, aliases, isPackage });
+  }
+  return result;
+}
+
+function pythonFromModule(rawModule: string, current: PythonModuleInfo): string | undefined {
+  const dots = rawModule.match(/^\.+/)?.[0].length ?? 0;
+  if (dots === 0) return normalizeQualified(rawModule);
+  const currentPackage = current.isPackage
+    ? current.primary.split('.').filter(Boolean)
+    : current.primary.split('.').filter(Boolean).slice(0, -1);
+  const ascend = dots - 1;
+  if (ascend > currentPackage.length) return undefined;
+  const suffix = rawModule.slice(dots).split('.').filter(Boolean);
+  return [...currentPackage.slice(0, currentPackage.length - ascend), ...suffix].join('.');
+}
+
+function importNameParts(node: Parser.SyntaxNode) {
+  if (node.type === 'aliased_import') {
+    return {
+      name: node.childForFieldName('name')?.text.trim() ?? '',
+      alias: node.childForFieldName('alias')?.text.trim() ?? ''
+    };
+  }
+  return { name: node.text.trim(), alias: '' };
+}
+
+function pythonScope(root: Parser.SyntaxNode, moduleInfo: PythonModuleInfo): PythonScope {
+  const scope: PythonScope = { modules: new Map(), imported: new Map() };
+  // Chỉ nhận import ở module scope. Import trong function/branch có lifetime khác và không được đoán.
+  for (const statement of root.namedChildren) {
+    if (statement.type === 'import_statement') {
+      for (const item of statement.namedChildren) {
+        const { name, alias } = importNameParts(item);
+        if (!name) continue;
+        const local = alias || name.split('.')[0];
+        const target = alias ? normalizeQualified(name) : normalizeQualified(name.split('.')[0]);
+        if (local && target) scope.modules.set(local, target);
+      }
+      continue;
+    }
+    if (statement.type !== 'import_from_statement') continue;
+    const moduleNode = statement.childForFieldName('module_name');
+    if (!moduleNode) continue;
+    const importedFrom = pythonFromModule(moduleNode.text.trim(), moduleInfo);
+    if (importedFrom === undefined) continue;
+    for (const item of statement.namedChildren) {
+      if (item.startIndex === moduleNode.startIndex && item.endIndex === moduleNode.endIndex) continue;
+      if (item.type === 'wildcard_import') continue;
+      const { name, alias } = importNameParts(item);
+      if (!name) continue;
+      scope.imported.set(alias || name, { module: importedFrom, symbol: normalizeQualified(name) });
+    }
+  }
+  return scope;
+}
+
+function moduleKey(moduleName: string, qualifiedName: string) {
+  return `${normalizeQualified(moduleName)}\0${normalizeQualified(qualifiedName)}`;
+}
+
+function uniqueRecords(records: DefRecord[]) {
+  return [...new Map(records.map((record) => [record.node.id, record])).values()];
+}
+
+function moduleTargets(
+  moduleNames: string[],
+  qualifiedName: string,
+  byModuleQualified: Map<string, DefRecord[]>
+) {
+  return uniqueRecords(moduleNames.flatMap((moduleName) =>
+    byModuleQualified.get(moduleKey(moduleName, qualifiedName)) ?? []
+  ));
+}
+
+function mappedReceiverTargets(
+  mappedReceiver: string,
+  calledName: string,
+  byModuleQualified: Map<string, DefRecord[]>
+) {
+  const parts = normalizeQualified(mappedReceiver).split('.').filter(Boolean);
+  const candidates: DefRecord[] = [];
+  for (let split = parts.length; split > 0; split -= 1) {
+    const moduleName = parts.slice(0, split).join('.');
+    const owner = parts.slice(split).join('.');
+    const qualified = owner ? `${owner}.${calledName}` : calledName;
+    candidates.push(...(byModuleQualified.get(moduleKey(moduleName, qualified)) ?? []));
+  }
+  return uniqueRecords(candidates);
+}
+
+function pythonCallTarget(
+  record: DefRecord,
+  call: CallRecord,
+  scope: PythonScope | undefined,
+  byModuleQualified: Map<string, DefRecord[]>
+) {
+  const name = normalizeQualified(call.name);
+  const receiver = normalizeQualified(call.receiver);
+  const owner = normalizeQualified(record.ownerName);
+
+  if (call.explicitReceiver && receiver === 'self' && owner) {
+    const selfTarget = moduleTargets(record.moduleNames, `${owner}.${name}`, byModuleQualified);
+    if (selfTarget.length === 1) return { id: selfTarget[0].node.id, resolution: 'exact' as const };
+    return undefined;
+  }
+
+  if (!call.explicitReceiver) {
+    // Python bare-name lookup không tự nhảy vào method cùng class; ưu tiên def module-level cùng file.
+    const local = moduleTargets(record.moduleNames, name, byModuleQualified)
+      .filter((candidate) => candidate.node.file === record.node.file);
+    if (local.length === 1) return { id: local[0].node.id, resolution: 'same-file' as const };
+    const binding = scope?.imported.get(name);
+    if (!binding) return undefined;
+    const imported = moduleTargets([binding.module], binding.symbol, byModuleQualified);
+    if (imported.length === 1) return { id: imported[0].node.id, resolution: 'import' as const };
+    return undefined;
+  }
+
+  if (scope) {
+    const moduleBinding = [...scope.modules.entries()]
+      .filter(([local]) => receiver === local || receiver.startsWith(`${local}.`))
+      .sort(([a], [b]) => b.length - a.length)[0];
+    if (moduleBinding) {
+      const [local, targetModule] = moduleBinding;
+      const mapped = `${targetModule}${receiver.slice(local.length)}`;
+      const imported = mappedReceiverTargets(mapped, name, byModuleQualified);
+      if (imported.length === 1) return { id: imported[0].node.id, resolution: 'import' as const };
+      return undefined;
+    }
+
+    const first = receiver.split('.')[0];
+    const fromBinding = scope.imported.get(first);
+    if (fromBinding) {
+      const remainder = receiver.slice(first.length).replace(/^\./, '');
+      const childModule = [fromBinding.module, fromBinding.symbol, remainder].filter(Boolean).join('.');
+      const asModule = mappedReceiverTargets(childModule, name, byModuleQualified);
+      const asSymbol = moduleTargets(
+        [fromBinding.module],
+        [fromBinding.symbol, remainder, name].filter(Boolean).join('.'),
+        byModuleQualified
+      );
+      const imported = uniqueRecords([...asModule, ...asSymbol]);
+      if (imported.length === 1) return { id: imported[0].node.id, resolution: 'import' as const };
+      return undefined;
+    }
+  }
+
+  // ClassName.method() chỉ được nối khi class nằm trong đúng module hiện tại.
+  const localClass = moduleTargets(record.moduleNames, `${receiver}.${name}`, byModuleQualified)
+    .filter((candidate) => candidate.node.file === record.node.file);
+  if (localClass.length === 1) return { id: localClass[0].node.id, resolution: 'exact' as const };
+  return undefined;
+}
+
 function resolveCallTarget(
   record: DefRecord,
   call: CallRecord,
   byQualified: Map<string, DefRecord[]>,
-  bySimple: Map<string, DefRecord[]>
+  bySimple: Map<string, DefRecord[]>,
+  pythonScopes: Map<string, PythonScope>,
+  byModuleQualified: Map<string, DefRecord[]>
 ) {
+  if (record.grammar === 'python') {
+    return pythonCallTarget(record, call, pythonScopes.get(record.node.file), byModuleQualified);
+  }
   const name = normalizeQualified(call.name);
   const receiver = normalizeQualified(call.receiver);
   const owner = normalizeQualified(record.ownerName);
@@ -322,6 +536,8 @@ export async function parseTreeSitter(files: SourceFileInput[]): Promise<Graph> 
   const usedIds = new Set<string>();
   const byQualified = new Map<string, DefRecord[]>();
   const bySimple = new Map<string, DefRecord[]>();
+  const byModuleQualified = new Map<string, DefRecord[]>();
+  const pythonScopes = new Map<string, PythonScope>();
   const parser = await ensureParser();
 
   for (const [config, configFiles] of byConfig) {
@@ -338,9 +554,12 @@ export async function parseTreeSitter(files: SourceFileInput[]): Promise<Graph> 
       continue;
     }
 
+    const pythonModules = config.grammar === 'python' ? pythonModuleInfos(configFiles) : new Map<string, PythonModuleInfo>();
     for (const file of configFiles) {
       const tree = parser.parse(file.content);
       const startToId = new Map<number, DefRecord>();
+      const pythonModule = pythonModules.get(file.path);
+      if (pythonModule) pythonScopes.set(file.path, pythonScope(tree.rootNode, pythonModule));
 
       for (const match of defQuery.matches(tree.rootNode)) {
         const defNode = match.captures.find((c) => c.name === 'def')?.node;
@@ -350,11 +569,23 @@ export async function parseTreeSitter(files: SourceFileInput[]): Promise<Graph> 
         const owner = enclosingOwner(defNode, config);
         const prefix = owner.name;
         const display = prefix ? `${prefix}.${bare}` : bare;
+        let parent = defNode.parent;
+        let nestedInFunction = false;
+        while (parent) {
+          if (config.defTypes.includes(parent.type)) {
+            nestedInFunction = true;
+            break;
+          }
+          parent = parent.parent;
+        }
         const line = nameNode.startPosition.row + 1;
         const id = uniqueId(`${file.path}#${display}`, usedIds, line);
         const record: DefRecord = {
+          grammar: config.grammar,
           ownerName: prefix,
           selfReceiver: owner.selfReceiver,
+          moduleNames: pythonModule?.aliases ?? [],
+          moduleQualifiedName: nestedInFunction ? '' : normalizeQualified(display),
           calls: [],
           node: {
             id,
@@ -381,6 +612,14 @@ export async function parseTreeSitter(files: SourceFileInput[]): Promise<Graph> 
         const qualifiedList = byQualified.get(qualified) ?? [];
         qualifiedList.push(record);
         byQualified.set(qualified, qualifiedList);
+        if (record.moduleQualifiedName) {
+          for (const moduleName of record.moduleNames) {
+            const key = moduleKey(moduleName, record.moduleQualifiedName);
+            const moduleList = byModuleQualified.get(key) ?? [];
+            moduleList.push(record);
+            byModuleQualified.set(key, moduleList);
+          }
+        }
       }
 
       // Ghi receiver + owner của call site; resolve đích sau khi đã có toàn bộ symbol table.
@@ -401,7 +640,7 @@ export async function parseTreeSitter(files: SourceFileInput[]): Promise<Graph> 
   const edges = new Map<string, GraphEdge>();
   for (const record of records) {
     for (const call of record.calls) {
-      const target = resolveCallTarget(record, call, byQualified, bySimple);
+      const target = resolveCallTarget(record, call, byQualified, bySimple, pythonScopes, byModuleQualified);
       if (!target) continue;
       const key = `${record.node.id}>${target.id}`;
       const existing = edges.get(key);

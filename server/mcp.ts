@@ -169,7 +169,7 @@ server.registerTool(
   {
     title: 'Import Health Report',
     description:
-      'GĐ 1 Repo Doctor (chỉ JS/TS): báo cáo sức khoẻ import ở mức file — file có thể thừa (kèm bằng chứng + độ tin cậy), ' +
+      'Kiểm tra import (chỉ JS/TS): báo cáo sức khoẻ import ở mức file — file có thể thừa (kèm bằng chứng + độ tin cậy), ' +
       'entry point, import tương đối gãy, và thống kê. Dựa trên import/export THẬT (ts-morph), không đoán theo tên. ' +
       'Nhận "path" (thư mục) hoặc "files".',
     inputSchema: { ...sourceShape }
@@ -184,7 +184,7 @@ server.registerTool(
   {
     title: 'File dependency graph',
     description:
-      'GĐ 2 Repo Doctor (chỉ JS/TS): đồ thị phụ thuộc MỨC FILE dựa trên import/export THẬT ' +
+      'Đồ thị file (chỉ JS/TS): đồ thị phụ thuộc MỨC FILE dựa trên import/export THẬT ' +
       '(ts-morph, không đoán theo tên). Node = file, cạnh = quan hệ import. Trả node (entry/normal/orphan, ' +
       'imports/importedBy/exports/loc, inCycle), cạnh (đánh dấu cycle) và thống kê (vòng phụ thuộc, orphan…). ' +
       'Nhận "path" (thư mục) hoặc "files".',

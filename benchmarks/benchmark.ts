@@ -41,8 +41,48 @@ const ambiguityFixture: SourceFileInput[] = [
     path: 'receiver.cpp',
     content: `class B { public: int helper(){ return 2; } };
       class A { public: int helper(){ return 1; } int run(B other){ return other.helper(); } };`
+  },
+  {
+    path: 'collision/__init__.py',
+    content: 'class helpers:\n    def run(self):\n        return 1\n'
+  },
+  {
+    path: 'collision/helpers.py',
+    content: 'def run():\n    return 2\n'
+  },
+  {
+    path: 'collision/use.py',
+    content: 'from collision import helpers\n\ndef start():\n    return helpers.run()\n'
   }
 ];
+
+const pythonSemanticFixture: SourceFileInput[] = [
+  { path: 'src/pkg/__init__.py', content: '' },
+  { path: 'src/pkg/helpers.py', content: 'def normalize(value):\n    return value.strip()\n' },
+  { path: 'src/pkg/models.py', content: 'class Service:\n    def run(self):\n        return 1\n' },
+  {
+    path: 'src/pkg/service.py',
+    content: `from . import helpers
+from .helpers import normalize as clean
+from .models import Service
+
+def through_module(value):
+    return helpers.normalize(value)
+
+def through_symbol(value):
+    return clean(value)
+
+def through_class():
+    return Service.run()
+`
+  }
+];
+
+const expectedPythonResolution = new Map([
+  ['src/pkg/service.py#through_module>src/pkg/helpers.py#normalize', 'import'],
+  ['src/pkg/service.py#through_symbol>src/pkg/helpers.py#normalize', 'import'],
+  ['src/pkg/service.py#through_class>src/pkg/models.py#Service.run', 'import']
+]);
 
 const contractFixture: SourceFileInput[] = [
   {
@@ -70,15 +110,15 @@ function p95(values: number[]) {
   return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)] ?? 0;
 }
 
-function checkResolutionGroundTruth(graph: Graph) {
+function checkResolutionGroundTruth(graph: Graph, expected = expectedResolution) {
   const actual = new Map(graph.edges.map((edge) => [`${edge.from}>${edge.to}`, edge.resolution]));
-  const missing = [...expectedResolution.keys()].filter((key) => !actual.has(key));
-  const unexpected = [...actual.keys()].filter((key) => !expectedResolution.has(key));
-  const wrongEvidence = [...expectedResolution].filter(([key, resolution]) => actual.get(key) !== resolution);
+  const missing = [...expected.keys()].filter((key) => !actual.has(key));
+  const unexpected = [...actual.keys()].filter((key) => !expected.has(key));
+  const wrongEvidence = [...expected].filter(([key, resolution]) => actual.get(key) !== resolution);
   if (missing.length || unexpected.length || wrongEvidence.length) {
     throw new Error(`Resolver ground truth failed: ${missing.length} missing, ${unexpected.length} unexpected, ${wrongEvidence.length} wrong evidence labels`);
   }
-  return { expected: expectedResolution.size, actual: actual.size };
+  return { expected: expected.size, actual: actual.size };
 }
 
 async function measure(label: string, task: (iteration: number) => unknown | Promise<unknown>) {
@@ -102,12 +142,14 @@ const project = await measure('analyzeProject · 6 languages / 6 files', (iterat
 });
 const radar = await measure('contractRadarReport · 1 client / 1 route', () => contractRadarReport(contractFixture));
 const resolution = checkResolutionGroundTruth(multi.result as Graph);
+const pythonSemantic = checkResolutionGroundTruth(await parseTreeSitter(pythonSemanticFixture), expectedPythonResolution);
 const ambiguous = await parseTreeSitter(ambiguityFixture);
 const guardedSources = new Set([
   'ambiguous/caller.py#run',
   'unique/caller.py#run',
   'receiver.java#A.run',
-  'receiver.cpp#A.run'
+  'receiver.cpp#A.run',
+  'collision/use.py#start'
 ]);
 const guarded = [...guardedSources].filter((source) => !ambiguous.edges.some((edge) => edge.from === source));
 if (guarded.length !== guardedSources.size) {
@@ -136,3 +178,4 @@ for (const item of [multi, project, radar]) {
   console.log(item.label.padEnd(52), item.medianMs.toFixed(2).padStart(12), item.p95Ms.toFixed(2).padStart(12), `${result}${evidence}`.padStart(18));
 }
 console.log(`Resolver ground truth: PASS · ${resolution.actual}/${resolution.expected} expected edges · 0 unexpected · ${guarded.length}/${guardedSources.size} under-evidenced calls omitted`);
+console.log(`Python import ground truth: PASS · ${pythonSemantic.actual}/${pythonSemantic.expected} expected edges · 0 unexpected · module/alias/relative-import evidence`);
