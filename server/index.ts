@@ -1,5 +1,4 @@
-import cors from 'cors';
-import express from 'express';
+import express, { type ErrorRequestHandler, type Response } from 'express';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,14 +12,19 @@ import { simulateChange } from './simulate';
 import { verifyChangeContract } from './changeContract';
 import { contractRadarReport } from './contractRadar';
 import type { ChangeContractPolicy, ChangeKind, SourceFileInput } from '../src/types';
-import { collectSourceFiles } from './scan';
+import { collectSourceFiles, SourceScanLimitError } from './scan';
 import { deleteProject, getProject, listProjects, saveProject, type ProjectMeta } from './db';
+import { localOriginGuard, localSecurityHeaders } from './httpSecurity';
+import { validateSourceFiles } from './requestValidation';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 3030);
 const app = express();
 
-app.use(cors());
+app.disable('x-powered-by');
+app.use(localSecurityHeaders);
+// Chặn website bên ngoài gọi localhost để đọc source/project đã lưu (DNS rebinding/CORS abuse).
+app.use(localOriginGuard);
 app.use(express.json({ limit: '60mb' }));
 
 app.get('/api/health', (_req, res) => {
@@ -28,11 +32,8 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.post('/api/analyze', async (req, res) => {
-  const files = req.body?.files as SourceFileInput[] | undefined;
-  if (!Array.isArray(files) || files.length === 0) {
-    res.status(400).json({ code: 'missingFiles', error: 'Thiếu danh sách files để phân tích.' });
-    return;
-  }
+  const files = readFiles(req.body?.files, res);
+  if (!files) return;
   try {
     res.json(await analyzeProject(files));
   } catch (error) {
@@ -41,11 +42,8 @@ app.post('/api/analyze', async (req, res) => {
 });
 
 app.post('/api/import-health', (req, res) => {
-  const files = req.body?.files as SourceFileInput[] | undefined;
-  if (!Array.isArray(files) || files.length === 0) {
-    res.status(400).json({ code: 'missingFiles', error: 'Thiếu danh sách files để phân tích.' });
-    return;
-  }
+  const files = readFiles(req.body?.files, res);
+  if (!files) return;
   try {
     res.json(importHealthReport(files));
   } catch (error) {
@@ -54,11 +52,8 @@ app.post('/api/import-health', (req, res) => {
 });
 
 app.post('/api/file-graph', (req, res) => {
-  const files = req.body?.files as SourceFileInput[] | undefined;
-  if (!Array.isArray(files) || files.length === 0) {
-    res.status(400).json({ code: 'missingFiles', error: 'Thiếu danh sách files để phân tích.' });
-    return;
-  }
+  const files = readFiles(req.body?.files, res);
+  if (!files) return;
   try {
     res.json(fileGraphReport(files));
   } catch (error) {
@@ -67,13 +62,10 @@ app.post('/api/file-graph', (req, res) => {
 });
 
 app.post('/api/simulate', async (req, res) => {
-  const files = req.body?.files as SourceFileInput[] | undefined;
+  const files = readFiles(req.body?.files, res);
+  if (!files) return;
   const kind = req.body?.kind as ChangeKind | undefined;
   const target = typeof req.body?.target === 'string' ? (req.body.target as string) : '';
-  if (!Array.isArray(files) || files.length === 0) {
-    res.status(400).json({ code: 'missingFiles', error: 'Thiếu danh sách files để phân tích.' });
-    return;
-  }
   if ((kind !== 'delete-file' && kind !== 'delete-function') || !target) {
     res.status(400).json({ code: 'invalidChange', error: 'Cần "kind" (delete-file|delete-function) và "target".' });
     return;
@@ -86,15 +78,13 @@ app.post('/api/simulate', async (req, res) => {
 });
 
 app.post('/api/change-contract', async (req, res) => {
-  const beforeFiles = req.body?.beforeFiles as SourceFileInput[] | undefined;
-  const afterFiles = req.body?.afterFiles as SourceFileInput[] | undefined;
+  const beforeFiles = readFiles(req.body?.beforeFiles, res, 'missingSnapshots');
+  if (!beforeFiles) return;
+  const afterFiles = readFiles(req.body?.afterFiles, res, 'missingSnapshots');
+  if (!afterFiles) return;
   const policy = (req.body?.policy && typeof req.body.policy === 'object'
     ? req.body.policy
     : {}) as ChangeContractPolicy;
-  if (!Array.isArray(beforeFiles) || beforeFiles.length === 0 || !Array.isArray(afterFiles) || afterFiles.length === 0) {
-    res.status(400).json({ code: 'missingSnapshots', error: 'Cần cả beforeFiles và afterFiles để kiểm Change Contract.' });
-    return;
-  }
   try {
     res.json(await verifyChangeContract(beforeFiles, afterFiles, policy));
   } catch (error) {
@@ -103,11 +93,8 @@ app.post('/api/change-contract', async (req, res) => {
 });
 
 app.post('/api/contract-radar', (req, res) => {
-  const files = req.body?.files as SourceFileInput[] | undefined;
-  if (!Array.isArray(files) || files.length === 0) {
-    res.status(400).json({ code: 'missingFiles', error: 'Thiếu danh sách files để phân tích.' });
-    return;
-  }
+  const files = readFiles(req.body?.files, res);
+  if (!files) return;
   try {
     res.json(contractRadarReport(files));
   } catch (error) {
@@ -122,12 +109,13 @@ app.post('/api/analyze-git', async (req, res) => {
     return;
   }
 
-  const dir = await mkdtemp(path.join(tmpdir(), 'huccanta-git-'));
+  let dir: string | undefined;
   try {
-    await run('git', ['clone', '--depth', '1', url, dir]);
+    dir = await mkdtemp(path.join(tmpdir(), 'huccanta-git-'));
+    await run('git', ['clone', '--depth', '1', '--single-branch', '--no-tags', url, dir]);
     const files = await collectSourceFiles(dir);
     if (files.length === 0) {
-      res.status(400).json({ code: 'gitNoSource', error: 'Repo không có file JS/TS hợp lệ để phân tích.' });
+      res.status(400).json({ code: 'gitNoSource', error: 'Repo không có file nguồn được hỗ trợ để phân tích.' });
       return;
     }
     const graph = await analyzeProject(files);
@@ -138,12 +126,17 @@ app.post('/api/analyze-git', async (req, res) => {
     } catch {
       /* lưu thất bại thì vẫn trả kết quả phân tích */
     }
-    // Client mong { graph, project } (xem GitAnalyzeResponse).
-    res.json({ graph, project });
+    // Trả cả files để File Graph/Contract Radar dùng được ngay, không bắt người dùng mở lại project.
+    res.json({ graph, files, project });
   } catch (error) {
-    res.status(500).json({ code: 'gitFailed', error: error instanceof Error ? error.message : 'Không clone/quét được repo.' });
+    if (error instanceof SourceScanLimitError) {
+      res.status(413).json({ code: 'scanLimit', error: error.message });
+    } else {
+      // Không trả stderr của Git: URL có thể chứa credential và không được phép rò vào response.
+      res.status(500).json({ code: 'gitFailed', error: 'Không clone/quét được repo.' });
+    }
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    if (dir) await rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
 });
 
@@ -162,18 +155,19 @@ app.get('/api/projects/:id', (req, res) => {
 });
 
 app.post('/api/projects', (req, res) => {
-  const files = req.body?.files as SourceFileInput[] | undefined;
-  if (!Array.isArray(files) || files.length === 0) {
-    res.status(400).json({ code: 'missingFilesSave', error: 'Thiếu danh sách files để lưu.' });
-    return;
+  const files = readFiles(req.body?.files, res, 'missingFilesSave');
+  if (!files) return;
+  try {
+    const meta = saveProject({
+      name: cleanLabel(req.body?.name, 'Project', 160),
+      source: cleanLabel(req.body?.source, 'folder', 40),
+      files,
+      nodeCount: Math.min(10_000_000, Math.max(0, Math.trunc(Number(req.body?.nodeCount) || 0)))
+    });
+    res.json(meta);
+  } catch {
+    res.status(500).json({ code: 'saveFailed', error: 'Không lưu được project.' });
   }
-  const meta = saveProject({
-    name: String(req.body?.name ?? 'Project'),
-    source: String(req.body?.source ?? 'folder'),
-    files,
-    nodeCount: Number(req.body?.nodeCount) || 0
-  });
-  res.json(meta);
 });
 
 app.delete('/api/projects/:id', (req, res) => {
@@ -189,6 +183,20 @@ if (servingApp) {
   // SPA fallback cho mọi đường dẫn không phải /api
   app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(distDir, 'index.html')));
 }
+
+// Chuẩn hoá lỗi body parser thành JSON có code ổn định để UI dịch được.
+app.use(((error, _req, res, next) => {
+  const detail = error as { status?: number; type?: string };
+  if (detail.type === 'entity.too.large' || detail.status === 413) {
+    res.status(413).json({ code: 'requestTooLarge', error: 'Request vượt giới hạn dung lượng.' });
+    return;
+  }
+  if (detail.type === 'entity.parse.failed' || detail.status === 400) {
+    res.status(400).json({ code: 'invalidJson', error: 'JSON không hợp lệ.' });
+    return;
+  }
+  next(error);
+}) as ErrorRequestHandler);
 
 const server = app.listen(PORT, '127.0.0.1', () => {
   const what = servingApp ? 'Huccanta (app + API)' : 'Huccanta analyzer API';
@@ -209,17 +217,45 @@ function repoName(url: string) {
   return last && last.length ? last : 'git-repo';
 }
 
+function readFiles(value: unknown, res: Response, missingCode = 'missingFiles'): SourceFileInput[] | null {
+  const result = validateSourceFiles(value, missingCode);
+  if (result.ok) return result.files;
+  res.status(result.status).json({ code: result.code, error: result.error });
+  return null;
+}
+
+function cleanLabel(value: unknown, fallback: string, maxLength: number) {
+  const cleaned = String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
+  return (cleaned || fallback).slice(0, maxLength);
+}
+
 function run(command: string, args: string[]) {
   return new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    let stderr = '';
-    child.stderr.on('data', (chunk) => {
-      stderr += String(chunk);
+    const child = spawn(command, args, {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_LFS_SKIP_SMUDGE: '1' }
     });
-    child.on('error', reject);
+    let stderr = '';
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (error) reject(error);
+      else resolve();
+    };
+    const timeout = setTimeout(() => {
+      child.kill();
+      finish(new Error(`${command} timed out`));
+    }, 120_000);
+    timeout.unref();
+    child.stderr.on('data', (chunk) => {
+      stderr = `${stderr}${String(chunk)}`.slice(-16_384);
+    });
+    child.on('error', (error) => finish(error));
     child.on('close', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(stderr.trim() || `${command} exited with code ${code}`));
+      if (code === 0) finish();
+      else finish(new Error(stderr.trim() || `${command} exited with code ${code}`));
     });
   });
 }

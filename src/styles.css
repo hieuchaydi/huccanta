@@ -347,6 +347,12 @@ button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 #arrow-cycle path { fill: var(--tangle); }
 #arrow-trace path { fill: var(--accent); }
 .graph-node { cursor: pointer; }
+.graph-node:focus { outline: none; }
+.graph-node:focus .node-box {
+  stroke: var(--accent);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 45%, transparent));
+}
 .graph-node .node-box {
   fill: var(--surface);
   stroke: var(--line-strong);

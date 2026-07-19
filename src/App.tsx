@@ -20,28 +20,18 @@ import {
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { layoutGraph, type LayoutMode, NODE_HEIGHT, nodeWidth } from './layout';
 import { type Lang, makeT, type TFn } from './i18n';
+import {
+  isIgnoredSourcePath,
+  isJavaScriptSourcePath,
+  isSupportedSourcePath,
+  MAX_SOURCE_BYTES,
+  MAX_SOURCE_FILE_BYTES,
+  MAX_SOURCE_FILES,
+  SOURCE_FILE_ACCEPT
+} from './sourceFiles';
 import type { ContractRadarReport, FileGraph, Graph, GraphEdge, GraphNode, SourceFileInput } from './types';
 
 const FILE_HUES = ['#3F5BF6', '#12A669', '#C77B00', '#8B5CF6', '#E23D4B', '#0E9AA7', '#0891B2', '#DB2777'];
-const SOURCE_EXT = /\.(cjs|mjs|js|jsx|ts|tsx)$/i;
-// Thư mục cần bỏ khi người dùng upload cả folder (mirror server/scan.ts).
-const IGNORE_SEG = new Set([
-  '.cache',
-  '.git',
-  '.next',
-  '.output',
-  '.svelte-kit',
-  '.turbo',
-  'build',
-  'coverage',
-  'dist',
-  'node_modules',
-  'out',
-  'vendor'
-]);
-function isIgnoredPath(path: string) {
-  return path.split('/').some((segment) => IGNORE_SEG.has(segment));
-}
 
 const SAMPLE: SourceFileInput[] = [
   {
@@ -229,27 +219,39 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
     body: JSON.stringify(body)
   });
   const text = await response.text();
-  let data: any = {};
+  let data: unknown = {};
   try {
     data = text ? JSON.parse(text) : {};
   } catch {
     data = {};
   }
-  if (!response.ok) throw new ApiError(data.error ?? `HTTP ${response.status}`, data.code);
+  const payload = asApiPayload(data);
+  if (!response.ok) throw new ApiError(typeof payload.error === 'string' ? payload.error : `HTTP ${response.status}`, typeof payload.code === 'string' ? payload.code : undefined);
   return data as T;
 }
 
 async function getJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
   const text = await response.text();
-  let data: any = {};
+  let data: unknown = {};
   try {
     data = text ? JSON.parse(text) : {};
   } catch {
     data = {};
   }
-  if (!response.ok) throw new ApiError(data.error ?? `HTTP ${response.status}`, data.code);
+  const payload = asApiPayload(data);
+  if (!response.ok) throw new ApiError(typeof payload.error === 'string' ? payload.error : `HTTP ${response.status}`, typeof payload.code === 'string' ? payload.code : undefined);
   return data as T;
+}
+
+async function deleteJson(url: string) {
+  const response = await fetch(url, { method: 'DELETE' });
+  const data = asApiPayload(await response.json().catch(() => ({})));
+  if (!response.ok) throw new ApiError(typeof data.error === 'string' ? data.error : `HTTP ${response.status}`, typeof data.code === 'string' ? data.code : undefined);
+}
+
+function asApiPayload(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 }
 
 // Thư viện project đã lưu trong SQLite (server local)
@@ -261,6 +263,7 @@ type GitAnalyzeResponse = { graph: Graph; files?: SourceFileInput[]; project?: S
 const LAYOUT_KEY = 'huccanta:layouts';
 const BASELINE_KEY = 'huccanta:baselines';
 const LANG_KEY = 'huccanta:lang';
+const THEME_KEY = 'huccanta:theme';
 const CURRENT_DB = 'huccanta-current-project';
 const CURRENT_STORE = 'sessions';
 const CURRENT_KEY = 'current';
@@ -441,8 +444,12 @@ export function App() {
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const [lang, setLang] = useState<Lang>(() => {
-    const saved = localStorage.getItem(LANG_KEY);
-    return saved === 'en' || saved === 'vi' ? saved : 'vi';
+    try {
+      const saved = localStorage.getItem(LANG_KEY);
+      return saved === 'en' || saved === 'vi' ? saved : 'vi';
+    } catch {
+      return 'vi';
+    }
   });
   const t = useMemo<TFn>(() => makeT(lang), [lang]);
   const [graph, setGraph] = useState<Graph | null>(null);
@@ -458,7 +465,15 @@ export function App() {
   const [hiddenFiles, setHiddenFiles] = useState<Set<string>>(new Set());
   const [fileFilter, setFileFilter] = useState<string | null>(null);
   const [view, setView] = useState<ViewBox>({ x: 40, y: 20, s: 1 });
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === 'light' || saved === 'dark') return saved;
+    } catch {
+      /* dùng theo hệ điều hành nếu storage bị chặn */
+    }
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
   const [modalOpen, setModalOpen] = useState(false);
   const [pasteCode, setPasteCode] = useState('');
   const [gitUrl, setGitUrl] = useState('');
@@ -482,11 +497,31 @@ export function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      /* theme vẫn hoạt động trong phiên hiện tại */
+    }
   }, [theme]);
 
   useEffect(() => {
+    if (!modalOpen && !contractOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (contractOpen) setContractOpen(false);
+      else setModalOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [modalOpen, contractOpen]);
+
+  useEffect(() => {
     document.documentElement.lang = lang;
-    localStorage.setItem(LANG_KEY, lang);
+    try {
+      localStorage.setItem(LANG_KEY, lang);
+    } catch {
+      /* ngôn ngữ vẫn hoạt động trong phiên hiện tại */
+    }
   }, [lang]);
 
   // Đồ thị đang hiển thị: mức hàm (graph) hoặc mức file (fileGraphView). Mọi memo/tương tác render
@@ -496,6 +531,7 @@ export function App() {
     viewMode === 'file' ? setFileGraphView : setGraph;
 
   const files = useMemo(() => [...new Set(activeGraph?.nodes.map((node) => node.file) ?? [])].sort(), [activeGraph]);
+  const jsSourceFiles = useMemo(() => sourceFiles.filter((file) => isJavaScriptSourcePath(file.path)), [sourceFiles]);
   const maps = useMemo(() => (activeGraph ? graphMaps(activeGraph) : null), [activeGraph]);
   const trace = useMemo(() => {
     if (!activeGraph || !selected || !tracing) return { nodes: new Set<string>(), edges: new Set<string>() };
@@ -552,7 +588,7 @@ export function App() {
     inputFiles: SourceFileInput[],
     name: string,
     source: string,
-    options: { autoSaveLibrary?: boolean; persistSession?: boolean } = {}
+    options: { autoSaveLibrary?: boolean; persistSession?: boolean; notice?: string } = {}
   ) {
     setBusy(true);
     setStatus(t('status.analyzingN', { n: inputFiles.length }));
@@ -573,7 +609,8 @@ export function App() {
       setFileFilter(null);
       setNodeQuery('');
       setOnlyIssues(false);
-      setStatus(t('status.result', { label: name, nodes: next.nodes.length, edges: next.edges.length }));
+      const resultStatus = t('status.result', { label: name, nodes: next.nodes.length, edges: next.edges.length });
+      setStatus(options.notice ? `${resultStatus} · ${options.notice}` : resultStatus);
       if (options.persistSession ?? true) {
         void writeCurrentSession({
           version: CURRENT_VERSION,
@@ -633,12 +670,13 @@ export function App() {
   }
 
   async function deleteSaved(id: string, name: string) {
+    if (!window.confirm(t('confirm.deleteProject', { name }))) return;
     try {
-      await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+      await deleteJson(`/api/projects/${id}`);
       setStatus(t('status.deleted', { name }));
       void refreshProjects();
-    } catch {
-      /* bỏ qua */
+    } catch (error) {
+      setStatus(errText(error, t, 'status.deleteFailed'));
     }
   }
 
@@ -649,12 +687,14 @@ export function App() {
     try {
       const result = await postJson<GitAnalyzeResponse>('/api/analyze-git', { url: gitUrl.trim() });
       const next = result.graph;
+      const gitFiles = result.files ?? [];
+      const projectName = result.project?.name ?? t('label.git');
       const laidOut = layoutGraph(cloneGraph(next), layoutMode);
       applySavedLayout(laidOut);
       setGraph(laidOut);
       setBaseline(loadBaseline(laidOut));
-      setSourceFiles([]); // repo được lưu server-side, client không giữ file
-      setProjectMeta({ name: t('label.git'), source: 'git' });
+      setSourceFiles(gitFiles);
+      setProjectMeta({ name: projectName, source: 'git' });
       setViewMode('function');
       setFileGraphView(null);
       setContractReport(null);
@@ -668,8 +708,8 @@ export function App() {
       void writeCurrentSession({
         version: CURRENT_VERSION,
         graph: laidOut,
-        files: [],
-        meta: { name: t('label.git'), source: 'git' },
+        files: gitFiles,
+        meta: { name: projectName, source: 'git' },
         status: { nodes: next.nodes.length, edges: next.edges.length },
         savedAt: new Date().toISOString()
       });
@@ -710,11 +750,11 @@ export function App() {
 
   // Nạp đồ thị mức file (gọi /api/file-graph một lần, rồi cache). Chỉ khả dụng khi có sourceFiles JS/TS.
   async function loadFileGraph() {
-    if (fileGraphView || sourceFiles.length === 0) return;
+    if (fileGraphView || jsSourceFiles.length === 0) return;
     setBusy(true);
     setStatus(t('status.fileGraphLoading'));
     try {
-      const report = await postJson<FileGraph>('/api/file-graph', { files: sourceFiles });
+      const report = await postJson<FileGraph>('/api/file-graph', { files: jsSourceFiles });
       const mapped = layoutGraph(cloneGraph(fileGraphToGraph(report)), layoutMode);
       setFileGraphView(mapped);
       setStatus(t('status.fileGraphResult', { files: report.summary.files, edges: report.summary.edges, cycles: report.summary.cycles }));
@@ -728,11 +768,11 @@ export function App() {
   }
 
   async function loadContractRadar() {
-    if (sourceFiles.length === 0) return;
+    if (jsSourceFiles.length === 0) return;
     setBusy(true);
     setStatus(t('status.contractLoading'));
     try {
-      const report = await postJson<ContractRadarReport>('/api/contract-radar', { files: sourceFiles });
+      const report = await postJson<ContractRadarReport>('/api/contract-radar', { files: jsSourceFiles });
       setContractReport(report);
       setContractOpen(true);
       const errors = report.issues.filter((issue) => issue.severity === 'error').length;
@@ -802,17 +842,18 @@ export function App() {
 
   async function handleFolderFiles(fileList: FileList | null) {
     if (!fileList) return;
-    const MAX_FILES = 1500;
-    const MAX_TOTAL = 40 * 1024 * 1024;
     const picked: File[] = [];
     let total = 0;
     let truncated = false;
     for (const file of Array.from(fileList)) {
       const rel = (file.webkitRelativePath || file.name).replace(/\\/g, '/');
-      if (!SOURCE_EXT.test(file.name) || file.name.endsWith('.d.ts')) continue;
-      if (isIgnoredPath(rel)) continue;
-      if (file.size > 600_000) continue;
-      if (picked.length >= MAX_FILES || total + file.size > MAX_TOTAL) {
+      if (!isSupportedSourcePath(file.name)) continue;
+      if (isIgnoredSourcePath(rel)) continue;
+      if (file.size > MAX_SOURCE_FILE_BYTES) {
+        truncated = true;
+        continue;
+      }
+      if (picked.length >= MAX_SOURCE_FILES || total + file.size > MAX_SOURCE_BYTES) {
         truncated = true;
         continue;
       }
@@ -824,7 +865,6 @@ export function App() {
       setStatus(t('status.folderNoSource'));
       return;
     }
-    if (truncated) setStatus(t('status.folderLimited', { n: picked.length }));
     const inputFiles = await Promise.all(
       picked.map(async (file) => ({
         path: (file.webkitRelativePath || file.name).replace(/\\/g, '/'),
@@ -832,7 +872,9 @@ export function App() {
       }))
     );
     const folderName = picked[0].webkitRelativePath?.split('/')[0] || t('label.folder');
-    await analyzeFiles(inputFiles, folderName, 'folder');
+    await analyzeFiles(inputFiles, folderName, 'folder', {
+      notice: truncated ? t('status.folderLimited', { n: picked.length }) : undefined
+    });
   }
 
   function handlePointerDown(event: React.PointerEvent<SVGSVGElement>) {
@@ -938,6 +980,7 @@ export function App() {
             ref={folderInputRef}
             type="file"
             multiple
+            accept={SOURCE_FILE_ACCEPT}
             className="hidden-input"
             {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
             onChange={(event) => void handleFolderFiles(event.target.files)}
@@ -962,8 +1005,8 @@ export function App() {
             <button
               className={`btn ${viewMode === 'file' ? 'on' : ''}`}
               onClick={() => switchView('file')}
-              disabled={sourceFiles.length === 0}
-              title={sourceFiles.length === 0 ? t('view.file.unavailable') : t('view.file.title')}
+              disabled={jsSourceFiles.length === 0}
+              title={jsSourceFiles.length === 0 ? t('view.file.unavailable') : t('view.file.title')}
             >
               <Boxes size={15} /> {t('view.file')}
             </button>
@@ -971,8 +1014,8 @@ export function App() {
           <button
             className={`btn ${contractOpen ? 'on' : ''}`}
             onClick={() => (contractReport ? setContractOpen(true) : void loadContractRadar())}
-            disabled={sourceFiles.length === 0}
-            title={sourceFiles.length === 0 ? t('contract.unavailable') : t('contract.button.title')}
+            disabled={jsSourceFiles.length === 0}
+            title={jsSourceFiles.length === 0 ? t('contract.unavailable') : t('contract.button.title')}
           >
             <ScanSearch size={15} /> {t('contract.button')}
           </button>
@@ -1002,10 +1045,10 @@ export function App() {
         </div>
         <div className="spacer" />
         <div className="status">{busy ? t('status.processing') : status}</div>
-        <button className="btn icon-only" onClick={() => setLang(lang === 'vi' ? 'en' : 'vi')} title={t('lang.title')}>
+        <button className="btn icon-only" onClick={() => setLang(lang === 'vi' ? 'en' : 'vi')} title={t('lang.title')} aria-label={t('lang.title')}>
           {lang === 'vi' ? 'EN' : 'VI'}
         </button>
-        <button className="btn icon-only" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title={t('theme.title')}>
+        <button className="btn icon-only" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title={t('theme.title')} aria-label={t('theme.title')}>
           {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
         </button>
       </header>
@@ -1035,6 +1078,7 @@ export function App() {
                       setHiddenFiles(next);
                     }}
                     title={t('file.toggle.title')}
+                    aria-label={t('file.toggle.title')}
                   />
                   <button className="row-main" onClick={() => setFileFilter(fileFilter === file ? null : file)}>
                     <span>{file}</span>
@@ -1114,14 +1158,18 @@ export function App() {
                   groupByFile={groupByFile}
                   traced={trace.nodes.has(node.id)}
                   dimmed={isNodeDimmed(node)}
+                  onActivate={() => {
+                    selectNode(node.id);
+                    centerNode(node);
+                  }}
                 />
               ))}
             </g>
           </svg>
           <div className="hint">{tracing ? t('hint.trace') : t('hint.normal')}</div>
           <div className="zoom-bar">
-            <button className="btn icon-only" onClick={() => zoom(1.2)} title={t('zoom.in')}><ZoomIn size={15} /></button>
-            <button className="btn icon-only" onClick={() => zoom(1 / 1.2)} title={t('zoom.out')}><ZoomOut size={15} /></button>
+            <button className="btn icon-only" onClick={() => zoom(1.2)} title={t('zoom.in')} aria-label={t('zoom.in')}><ZoomIn size={15} /></button>
+            <button className="btn icon-only" onClick={() => zoom(1 / 1.2)} title={t('zoom.out')} aria-label={t('zoom.out')}><ZoomOut size={15} /></button>
             <button className="btn" onClick={() => fitGraph()} title={t('zoom.fit')}><Maximize2 size={15} /> {t('zoom.fit.label')}</button>
           </div>
         </section>
@@ -1144,8 +1192,8 @@ export function App() {
 
       {modalOpen && (
         <div className="modal" onClick={(event) => event.target === event.currentTarget && setModalOpen(false)}>
-          <div className="sheet">
-            <h2>{t('modal.addProject')}</h2>
+          <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="add-project-title">
+            <h2 id="add-project-title">{t('modal.addProject')}</h2>
             <div className="add-grid">
               <button className="add-card" onClick={() => folderInputRef.current?.click()}>
                 <FolderOpen size={20} />
@@ -1179,7 +1227,7 @@ export function App() {
                     <span className="saved-name">{project.name}</span>
                     <span className="saved-meta">{t('proj.meta', { files: project.fileCount, nodes: project.nodeCount })}</span>
                   </button>
-                  <button className="saved-del" onClick={() => void deleteSaved(project.id, project.name)} title={t('action.delete')}>
+                  <button className="saved-del" onClick={() => void deleteSaved(project.id, project.name)} title={t('action.delete')} aria-label={`${t('action.delete')} ${project.name}`}>
                     <Trash2 size={15} />
                   </button>
                 </div>
@@ -1367,7 +1415,8 @@ function NodeView({
   selected,
   groupByFile,
   traced,
-  dimmed
+  dimmed,
+  onActivate
 }: {
   node: GraphNode;
   files: string[];
@@ -1375,6 +1424,7 @@ function NodeView({
   groupByFile: boolean;
   traced: boolean;
   dimmed: boolean;
+  onActivate: () => void;
 }) {
   const width = nodeWidth(node);
   const fileColor = colorForFile(node.file, files);
@@ -1383,7 +1433,19 @@ function NodeView({
     .join(' ');
   const text = node.name.length > 26 ? `${node.name.slice(0, 24)}...` : node.name;
   return (
-    <g className={className} data-node-id={node.id} transform={`translate(${(node.x ?? 0) - width / 2},${(node.y ?? 0) - NODE_HEIGHT / 2})`}>
+    <g
+      className={className}
+      data-node-id={node.id}
+      transform={`translate(${(node.x ?? 0) - width / 2},${(node.y ?? 0) - NODE_HEIGHT / 2})`}
+      role="button"
+      tabIndex={0}
+      aria-label={`${node.name}, ${node.file}:${node.line}`}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        onActivate();
+      }}
+    >
       <rect
         className="node-box"
         width={width}

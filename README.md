@@ -1,6 +1,6 @@
 # Huccanta
 
-Công cụ kiểm tra codebase chạy local cho JavaScript/TypeScript. Ngoài bản đồ hàm/file và Refactor Sandbox, source hiện có **Contract Radar** (nối HTTP client với Express/Fastify/Nest/Next route; kiểm schema/auth/status/test coverage) và **Change Contract** (kiểm snapshot trước/sau theo policy, trả PASS/FAIL/UNKNOWN + fingerprint). Dùng ngay trong UI, MCP, HTTP API hoặc CI CLI; chạy 100% trên máy bạn.
+Công cụ kiểm tra codebase đa ngôn ngữ chạy local: JavaScript/TypeScript, Python, Java, Go, C/C++ và C#. Ngoài bản đồ hàm/file và Refactor Sandbox, source hiện có **Contract Radar** (nối HTTP client với Express/Fastify/Nest/Next route; kiểm schema/auth/status/test coverage) và **Change Contract** (kiểm snapshot trước/sau theo policy, trả PASS/FAIL/UNKNOWN + fingerprint). Dùng ngay trong UI, MCP, HTTP API hoặc CI CLI; chạy 100% trên máy bạn.
 
 **Tiếng Việt** · **[English](README.en.md)**
 
@@ -125,6 +125,8 @@ Click vào một node để xem code thật, danh sách hàm gọi đến / bị
 Nguồn code có thể là: dán trực tiếp, chọn một thư mục local, hoặc dán URL repo Git để clone và quét. Project đã quét có thể lưu lại để mở nhanh lần sau.
 
 **Ngôn ngữ hỗ trợ:** JavaScript/TypeScript (qua ts-morph, resolve symbol chính xác) và **Python, Java, Go, C/C++, C#** (qua tree-sitter). Nhóm tree-sitter dùng resolver tĩnh bảo thủ: qualified owner/receiver hoặc symbol cùng-file duy nhất; call xuyên file chỉ có tên trần và call mơ hồ đều bị bỏ cạnh thay vì đoán.
+
+Để tránh treo máy khi quét nhầm repo sinh code hoặc monorepo quá lớn, mỗi lượt nhận tối đa 1.500 file nguồn, 800 KB/file và 40 MB source; `node_modules`, output build/cache và `vendor` được bỏ qua.
 
 ## Yêu cầu
 

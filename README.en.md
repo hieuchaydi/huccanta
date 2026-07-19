@@ -1,6 +1,6 @@
 # Huccanta
 
-A local-first codebase checker for JavaScript/TypeScript. Beyond function/file maps and the Refactor Sandbox, the source now includes **Contract Radar** (connect HTTP clients to Express/Fastify/Nest/Next routes; check schemas, auth, statuses, and test coverage) and **Change Contract** (verify before/after snapshots against a policy, returning PASS/FAIL/UNKNOWN plus a fingerprint). Use them from the UI, MCP, HTTP APIs, or the CI CLI; everything runs locally.
+A local-first polyglot codebase checker for JavaScript/TypeScript, Python, Java, Go, C/C++, and C#. Beyond function/file maps and the Refactor Sandbox, the source now includes **Contract Radar** (connect HTTP clients to Express/Fastify/Nest/Next routes; check schemas, auth, statuses, and test coverage) and **Change Contract** (verify before/after snapshots against a policy, returning PASS/FAIL/UNKNOWN plus a fingerprint). Use them from the UI, MCP, HTTP APIs, or the CI CLI; everything runs locally.
 
 **[Tiếng Việt](README.md)** · **English**
 
@@ -74,6 +74,8 @@ Click a node to see the real code, its callers/callees, why it was flagged and h
 Code can come from: pasted source, a local folder, or a Git repo URL to clone and scan. Scanned projects can be saved for quick reopening.
 
 **Supported languages:** JavaScript/TypeScript (via ts-morph, with accurate symbol resolution) and **Python, Java, Go, C/C++, C#** (via tree-sitter). Tree-sitter languages use a conservative static resolver: qualified owner/receiver or a unique same-file symbol; Python additionally follows explicit module-scope imports and aliases. Bare-name cross-file calls and ambiguous calls are omitted instead of guessed.
+
+To avoid freezing the machine after selecting a generated-code tree or oversized monorepo, each scan accepts up to 1,500 source files, 800 KB per file, and 40 MB of source; dependencies, build/cache output, and `vendor` are skipped.
 
 ## Requirements
 

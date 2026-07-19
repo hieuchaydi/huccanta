@@ -8,6 +8,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import path from 'node:path';
 import { z } from 'zod';
+import { MAX_SOURCE_FILES } from '../src/sourceFiles';
 import type { Graph, SourceFileInput } from '../src/types';
 import { analyzeProject } from './analyze';
 import { importHealthReport } from './importHealth';
@@ -16,6 +17,7 @@ import { simulateChange } from './simulate';
 import { verifyChangeContract } from './changeContract';
 import { contractRadarReport } from './contractRadar';
 import { collectSourceFiles } from './scan';
+import { validateSourceFiles } from './requestValidation';
 
 // Cho phép "npx huccanta-mcp <folder>": nếu truyền thư mục, các tool có thể bỏ trống
 // "path"/"files" và sẽ tự phân tích thư mục này.
@@ -58,11 +60,11 @@ const sourceShape = {
     .string()
     .optional()
     .describe('Đường dẫn thư mục local để quét đệ quy (JS/TS, Python, Java, Go, C/C++, C#; tự bỏ node_modules/dist/build...).'),
-  files: z.array(fileInput).optional().describe('Danh sách file phân tích trực tiếp, dùng thay cho "path".')
+  files: z.array(fileInput).max(MAX_SOURCE_FILES).optional().describe('Danh sách file phân tích trực tiếp, dùng thay cho "path".')
 };
 
 async function loadFiles(input: { path?: string; files?: SourceFileInput[] }): Promise<SourceFileInput[]> {
-  if (input.files && input.files.length > 0) return input.files;
+  if (input.files && input.files.length > 0) return validatedFiles(input.files);
   const root = input.path ?? DEFAULT_ROOT;
   if (root) {
     const files = await collectSourceFiles(root);
@@ -70,6 +72,12 @@ async function loadFiles(input: { path?: string; files?: SourceFileInput[] }): P
     return files;
   }
   throw new Error('Cần cung cấp "path" (thư mục local) hoặc "files".');
+}
+
+function validatedFiles(files: SourceFileInput[]) {
+  const result = validateSourceFiles(files);
+  if (!result.ok) throw new Error(result.error);
+  return result.files;
 }
 
 function overviewOf(graph: Graph) {
@@ -103,7 +111,7 @@ function rankedHotspots(graph: Graph, limit: number) {
 
 const json = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
 
-const server = new McpServer({ name: 'huccanta', version: '0.4.0' });
+const server = new McpServer({ name: 'huccanta', version: '1.0.0' });
 
 server.registerTool(
   'analyze_code',
@@ -224,13 +232,13 @@ server.registerTool(
       'Trả PASS/FAIL/UNKNOWN, structural delta, bằng chứng và SHA-256 fingerprint deterministic. ' +
       'Đây là chứng thư cấu trúc tĩnh, không phải formal proof hay kiểm chứng hành vi runtime.',
     inputSchema: {
-      beforeFiles: z.array(fileInput).min(1).describe('Snapshot JS/TS trước thay đổi.'),
-      afterFiles: z.array(fileInput).min(1).describe('Snapshot JS/TS sau thay đổi.'),
+      beforeFiles: z.array(fileInput).min(1).max(MAX_SOURCE_FILES).describe('Snapshot JS/TS trước thay đổi.'),
+      afterFiles: z.array(fileInput).min(1).max(MAX_SOURCE_FILES).describe('Snapshot JS/TS sau thay đổi.'),
       policy: changeContractPolicyInput
     }
   },
   async ({ beforeFiles, afterFiles, policy }) => {
-    return json(await verifyChangeContract(beforeFiles, afterFiles, policy));
+    return json(await verifyChangeContract(validatedFiles(beforeFiles), validatedFiles(afterFiles), policy));
   }
 );
 
