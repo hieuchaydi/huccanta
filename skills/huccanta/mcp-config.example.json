@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "huccanta": {
+      "command": "node",
+      "args": [
+        "<ABSOLUTE_HUCCANTA_REPO>/bin/huccanta-mcp.mjs",
+        "<ABSOLUTE_TARGET_PROJECT>"
+      ]
+    }
+  }
+}
